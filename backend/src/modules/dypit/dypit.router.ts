@@ -9,6 +9,7 @@ import {
   previewRangeSchema,
 } from './intents.schemas.js';
 import * as service from './intents.service.js';
+import * as generationService from './generation.service.js';
 
 export const dypitRouter = Router();
 
@@ -98,5 +99,36 @@ dypitRouter.get(
   asyncHandler(async (req, res) => {
     const examId = z.string().uuid().parse(req.params.examId);
     res.json(await service.previewPlan(examId));
+  }),
+);
+const generateSchema = z.object({
+  seed: z.string().trim().max(64).optional(),
+  historyDepth: z.coerce.number().int().min(0).max(10).optional(),
+  replace: z.boolean().optional().default(false),
+});
+
+/**
+ * Generates the plan by executing this exam's intents, rather than searching
+ * the whole building. See generation.service.ts.
+ */
+dypitRouter.post(
+  '/exams/:examId/generate-from-intents',
+  asyncHandler(async (req, res) => {
+    const examId = z.string().uuid().parse(req.params.examId);
+    const options = generateSchema.parse(req.body ?? {});
+    const result = await generationService.generateFromIntents(examId, options, {
+      actorUserId: req.auth?.userId ?? null,
+      ip: req.ip ?? null,
+    });
+    res.json({ result });
+  }),
+);
+
+/** Read-only explanation of what the current intents would seat. */
+dypitRouter.get(
+  '/exams/:examId/intents/explain',
+  asyncHandler(async (req, res) => {
+    const examId = z.string().uuid().parse(req.params.examId);
+    res.json(await generationService.explainIntents(examId));
   }),
 );

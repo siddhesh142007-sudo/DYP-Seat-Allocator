@@ -98,11 +98,25 @@ export async function studentsInRange(range: RollRange, client = prisma) {
     orderBy: { rollNumber: 'asc' },
   });
 
-  const parsed: Array<{ id: string; rollNumber: string; name: string; serial: number }> = [];
+  const parsed: Array<{
+    id: string;
+    rollNumber: string;
+    name: string;
+    division: string | null;
+    departmentId: string;
+    serial: number;
+  }> = [];
   for (const s of rows) {
     const serial = parseSerial(s.rollNumber.slice(prefix.length));
     if (serial !== null && serial >= range.fromSerial && serial <= range.toSerial) {
-      parsed.push({ id: s.id, rollNumber: s.rollNumber, name: s.name, serial });
+      parsed.push({
+        id: s.id,
+        rollNumber: s.rollNumber,
+        name: s.name,
+        division: s.division,
+        departmentId: s.departmentId,
+        serial,
+      });
     }
   }
   return parsed.sort((a, b) => a.serial - b.serial);
