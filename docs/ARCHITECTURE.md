@@ -65,6 +65,13 @@ Key properties:
   a `worker_threads` runner can be dropped in without touching the service (see ASSUMPTIONS #52).
 - **All persistence goes through one DB transaction** per generation: previous draft superseded,
   run + allocations inserted atomically — never a partial plan.
+- **Allocation is intent-driven for DYPIT.** Rather than searching the whole building, the
+  administrator declares *AllocationIntents* ("roll range → room") and generation executes them;
+  each block is an independent sub-plan (its own students, room, bench window and history) so the
+  no-repeat penalties still apply inside the block. The merged plan is validated as a whole before
+  anything is saved. See `docs/ASSUMPTIONS.md` §DYPIT-specific work.
+- **DYPIT is administrator-only.** There is no student login or portal; the `STUDENT` role is not
+  part of the `user_role` enum.
 - **Failures are structured**: `{code, message, details, suggestion}` (e.g. `INSUFFICIENT_SEATS`
   with "Additional seats required: 28"), never silent.
 
@@ -77,12 +84,12 @@ Key properties:
 | `users` | Admin user CRUD (Super Admin only) | 3 |
 | `audit` | `auditLog(actor, action, entity, entityId, metadata)` helper + `GET /audit-logs` | 3 |
 | `departments`, `academic-years` | Configurable master data CRUD | 4 |
-| `students` | CRUD, soft-deactivate, search/filter/pagination, CSV/XLSX import, student login users | 4 |
+| `students` | CRUD, soft-deactivate, search/filter/pagination, CSV/XLSX import | 4 |
 | `classrooms` | Room CRUD, bench generation, seat enable/disable | 4 |
 | `exams` | Exam CRUD, auto-registration, eligible-students, preview stats, time-slot clash detection, registration status management | 5 |
 | `seating` | generate/regenerate orchestration, engine runner call, one-transaction save, advisory-lock concurrency, publish/unpublish, stale-plan detection, run + student seating-history queries | 7 |
-| `me` | Student-portal reads: `GET /me/seating` (PUBLISHED-only, upcoming/past split) and `GET /me/seating/slip/:examId` (pdfkit slip); STUDENT-role-only, keyed to the token's own student | 9 |
 | `exports` | Exam-wise exports: classroom/department/student/plan (CSV/XLSX/PDF), single + bulk slips (PDF); draft watermark, published gate, structured 409. Classroom import (CSV/XLSX, dry-run, all-or-nothing, template download). | 10 |
+| `dypit` | DYPIT-specific: roll-number parsing (`SE-AIDS-C_07`), SPPU curriculum master data, **allocation intents** (roll range → room, with bench offset and optional rows×cols grid), and generation that executes those intents. | DYPIT |
 | `dashboard` | Summary + chart data | 8 |
 
 Frontend mirrors this with `src/pages` (routes), `src/features/*` (feature components),
@@ -136,6 +143,6 @@ sequenceDiagram
 - `helmet`, strict CORS allowlist, rate limiting (`express-rate-limit`), request-size limits.
 - JWT access token short-lived; refresh token in httpOnly + SameSite cookie with rotation.
 - Passwords hashed with bcrypt (cost ≥ 12) / argon2 — never logged, never returned.
-- Zod validation on every input; RBAC middleware (`SUPER_ADMIN`, `EXAM_ADMIN`, `STUDENT`).
+- Zod validation on every input; RBAC middleware (`SUPER_ADMIN`, `EXAM_ADMIN`). DYPIT has no student role.
 - `.env` never committed (`.env.example` documents every variable).
 - Published seating plans are immutable at the API **and** database level (triggers) — **PUBLISHED runs/allocations only**. Non-PUBLISHED runs/allocations are freely deletable/updatable, and deletes return `OLD` so the `fn_enforce_published_immutability` trigger never silently swallows a row (DB-level deletes of DRAFT/VALIDATED/SUPERSEDED work). `app.allow_published_mutation` is a transaction-local bypass for the Super Admin unpublish flow.

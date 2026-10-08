@@ -9,6 +9,12 @@ Development:  http://localhost:3001/api/v1
 Production:   https://your-domain.com/api/v1
 ```
 
+## Access model
+
+DYPIT is **administrator-only**: there are two roles, `SUPER_ADMIN` and `EXAM_ADMIN`, and no
+student login or portal. Students exist as records (they are seated) but have no user accounts, and
+a roll number is not a login identifier.
+
 ## Authentication
 
 All endpoints except `/health` and `/auth/*` require a valid JWT access token in the `Authorization` header:
@@ -151,14 +157,71 @@ All errors follow the `{ error: { code, message, details } }` envelope:
 | `GET` | `/seating/exams/:id/seating` | EXAM_ADMIN, SUPER_ADMIN | Latest run (draft/validated/published) with allocations. |
 | `GET` | `/seating/exams/:id/seating/runs` | EXAM_ADMIN, SUPER_ADMIN | History of runs (status, stats, penalty, failure). |
 | `GET` | `/seating/exams/:id/seating/validate` | EXAM_ADMIN, SUPER_ADMIN | Stale report (added/removed students, disabled rooms/seats, suggestion). |
-| `GET` | `/seating/students/:id/seating-history` | STUDENT (self) / SUPER_ADMIN / EXAM_ADMIN | Student's seat across published exams. |
+| `GET` | `/seating/students/:id/seating-history` | SUPER_ADMIN, EXAM_ADMIN | A student's seat across published exams. |
 
-### Student Portal (Student role only)
+### DYPIT allocation (administrator only)
+
+DYPIT allocates seating by declaring **roll-number ranges against classrooms** rather than by
+searching the whole building. Roll numbers look like `SE-AIDS-C_07`
+(`SE` = 2nd year, `AIDS` = branch, `C` = division, `07` = serial).
 
 | Method | Path | Roles | Description |
 |--------|------|-------|-------------|
-| `GET` | `/me/seating` | STUDENT | Upcoming + past exams with published seats. Upcoming: card with Room/Bench highlight. Past: collapsed `<details>`. |
-| `GET` | `/me/seating/slip/:examId` | STUDENT | PDF slip (404 if draft/other/unknown; 400 for bad UUID). |
+| `GET` | `/dypit/cohorts` | SUPER_ADMIN, EXAM_ADMIN | Distinct year/branch/division cohorts with counts and serial bounds |
+| `POST` | `/dypit/preview-range` | SUPER_ADMIN, EXAM_ADMIN | Which students a roll range resolves to |
+| `GET` | `/dypit/students` | SUPER_ADMIN, EXAM_ADMIN | Paginated cohort students |
+| `GET` | `/dypit/exams/:examId/intents` | SUPER_ADMIN, EXAM_ADMIN | Allocation blocks with resolved student counts |
+| `POST` | `/dypit/exams/:examId/intents` | SUPER_ADMIN, EXAM_ADMIN | Add a roll-range → room block |
+| `PATCH` | `/dypit/exams/:examId/intents/:intentId` | SUPER_ADMIN, EXAM_ADMIN | Edit a block |
+| `DELETE` | `/dypit/exams/:examId/intents/:intentId` | SUPER_ADMIN, EXAM_ADMIN | Remove a block |
+| `GET` | `/dypit/exams/:examId/intents/plan` | SUPER_ADMIN, EXAM_ADMIN | Dry-run summary of the whole plan |
+| `GET` | `/dypit/exams/:examId/intents/explain` | SUPER_ADMIN, EXAM_ADMIN | Per-block student count, required benches, whether it still fits |
+| `POST` | `/dypit/exams/:examId/generate-from-intents` | SUPER_ADMIN, EXAM_ADMIN | Execute the blocks and save one plan |
+
+**Create a block** — `POST /dypit/exams/:examId/intents`
+
+```json
+{
+  "classroomId": "…uuid…",
+  "yearCode": "SE",
+  "branchCode": "AIDS",
+  "division": "C",
+  "fromSerial": 1,
+  "toSerial": 45,
+  "rowCount": 5,
+  "colCount": 9,
+  "strictRollOrder": false
+}
+```
+
+- `rowCount`/`colCount` are optional but must be given **together**; they size the bench grid.
+- `seatOffset` may be supplied to start part-way into a room. **Omit it** and the block is placed
+  in the next free bench window automatically.
+- `strictRollOrder: true` seats the block in ascending roll order with no shuffle.
+
+**Rejections** carry a structured `error.details.code`:
+
+| Code | Meaning |
+|------|---------|
+| `EMPTY_RANGE` | No students match the range — usually a typo in the division or serial |
+| `ROOM_TOO_SMALL` | The room (from `seatOffset`) has fewer usable benches than the block needs |
+| `RANGE_OVERLAP` | The serial range overlaps another block for the same year/branch/division |
+| `BENCH_OVERLAP` | The bench window collides with another block in the same room |
+| `NO_INTENTS` | Generate was called before any block was added |
+| `PLAN_EXISTS` | A plan already exists; pass `{"replace": true}` to regenerate |
+
+Editing intents is refused (409) once a plan exists, or while the exam is PUBLISHED.
+
+**Generate** — `POST /dypit/exams/:examId/generate-from-intents`
+
+```json
+{ "seed": "paper-3", "historyDepth": 3, "replace": true }
+```
+
+Each block is an independent sub-plan — its own students, room, bench window and history — so
+students avoid the seat, room, bench number and neighbours they had in previous papers. The
+merged plan is validated as a whole and saved in one transaction; if any block cannot be seated,
+nothing is written.
 
 ### Exports (Exam Admin + Super Admin)
 

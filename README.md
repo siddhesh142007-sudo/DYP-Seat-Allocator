@@ -7,6 +7,11 @@ constraints at both the engine and database level.
 
 > **Status:** built phase by phase per `EXAM_SEATING_BUILD_GUIDE.md` (Sections 0–7 are the
 > permanent spec). All 12 phases complete. See `docs/` and the Master Completion Checklist in the guide.
+>
+> **DYPIT deployment:** this fork targets **Dr. D. Y. Patil Institute of Technology, Pimpri**
+> (SPPU / DTE code 6207). It is **administrator-only** — there is no student login — and seating is
+> allocated by **roll-number range to a chosen classroom** rather than by searching the whole
+> building. See [DYPIT workflow](#dypit-workflow) below.
 
 ## Features
 
@@ -18,6 +23,28 @@ constraints at both the engine and database level.
 - Draft → Validated → Published lifecycle, stale-plan detection, immutable published plans
 - Admin dashboard, classroom seat-map visualization, student portal, PDF/CSV/XLSX exports
 - Docker Compose one-command setup
+
+## DYPIT workflow
+
+DYPIT roll numbers encode year, branch and division:
+
+```
+SE-AIDS-C_07     │  │    │  └── serial (1-based, zero-padded)
+                 │  │    └───── division (A–Z)
+                 │  └────────── branch code (matches Department.code)
+                 └───────────── year: FE 1st · SE 2nd · TE 3rd · BE 4th
+```
+
+The administrator allocates a plan by declaring **roll ranges against classrooms**:
+
+1. `npm run seed:dypit` — loads the 10 DYPIT branches with their sanctioned intake (1,170 seats)
+   and the SPPU curriculum from `backend/seed-data/*.csv`.
+2. Open an exam → **Allocation builder** (`/admin/exams/:id/seating/builder`).
+3. Add blocks, e.g. `SE-AIDS-C_01`–`45` → Room `706` (optionally a `5 × 9` bench grid).
+   Each block can be **shuffled** (default) or **strict roll order** for easy invigilation.
+4. **Generate plan** — students are shuffled *within* the chosen room while avoiding the seats,
+   room, bench number and neighbours they had in the previous paper.
+5. Validate, publish, then export PDF/CSV/XLSX.
 
 ## Quick start
 
@@ -48,7 +75,8 @@ The test suite provisions its own database (`exam_seating_test`) and runs the sa
 
 ```bash
 npm run seed                # idempotent: creates SUPER_ADMIN from SUPER_ADMIN_* env vars
-npm run seed:demo           # creates full demo dataset (610 students, 15 rooms, 4 exams, 20 demo accounts)
+npm run seed:dypit          # DYPIT branches + sanctioned intake + SPPU curriculum (from backend/seed-data)
+npm run seed:demo           # demo dataset (610 students, 15 rooms, 4 exams) — no student logins
 npm run seed:demo-history   # generates & publishes Paper 1 + Paper 2 for demo (requires running backend)
 ```
 
@@ -61,12 +89,12 @@ Set `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` (min 8 chars) and `SUPER_ADMIN_N
 |---|---|---|
 | Super Admin | `admin@demo.local` | `Demo123!` |
 | Exam Admin | `examadmin@demo.local` | `Demo123!` |
-| Student | `<roll>@student.demo` (e.g. `24cse001@student.demo`) | `Demo123!` |
 
-Admins land on `/admin`, students on `/portal`. Access token: 15 min JWT (in memory);
-refresh token: 7-day httpOnly cookie scoped to `/api/v1/auth`, rotated on every refresh and
-revoked by logout/password change. Failed logins are rate-limited per identifier and every
-login/failure is recorded in `audit_logs`.
+DYPIT is administrator-only: there are **no student logins** and no `/portal` page. Both admin
+roles land on `/admin/dashboard`. Access token: 15 min JWT (in memory); refresh token: 7-day
+httpOnly cookie scoped to `/api/v1/auth`, rotated on every refresh and revoked by
+logout/password change. Failed logins are rate-limited per identifier and every login/failure is
+recorded in `audit_logs`.
 
 ## Repository structure
 
@@ -77,8 +105,9 @@ login/failure is recorded in `audit_logs`.
 ├── .env.example
 ├── backend/               # Node 20 + Express + TypeScript API
 │   ├── prisma/            # schema + migrations (Phase 2+)
-│   ├── src/
-│   │   ├── config/        # env validation (Zod)
+│   ├── seed-data/         # DYPIT SPPU curriculum source CSVs
+│   └── src/
+│       ├── config/        # env validation (Zod)
 │   │   ├── common/        # errors, logger, middleware
 │   │   ├── db/            # pg pool
 │   │   ├── modules/       # feature modules (health, auth, seating, ...)
@@ -128,7 +157,7 @@ All variables are documented in [`.env.example`](.env.example) (`DATABASE_URL`, 
 | `docs/TESTING.md` | How to run each test suite (Phase 11) |
 | `docs/DEPLOYMENT.md` | Production deployment guide (Phase 12) |
 | `docs/KNOWN_LIMITATIONS.md` | Known issues and trade-offs (Phase 12) |
-| `database/ER_DIAGRAM.md` | Mermaid ER diagram (Phase 2) |
+| `database/ER_DIAGRAM.md` | Mermaid ER diagram |
 
 ## CI / GitHub Actions
 

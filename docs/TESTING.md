@@ -33,8 +33,12 @@ backend/tests/
 ├── classrooms-import.test.ts          # 10 tests (Phase 10 classroom import)
 ├── exams.test.ts                      # CRUD + preview stats
 ├── seating.test.ts                    # 18 tests (Phase 7 generate/publish/history)
-├── me.test.ts                         # 9 tests (Phase 9 student portal)
 ├── exports.test.ts                    # 18 tests (Phase 10 exports + 5k perf)
+├── dypit-roll.test.ts                 # 15 tests (DYPIT roll parsing + ranges)
+├── dypit-curriculum.test.ts           # 25 tests (SPPU curriculum parsers, real CSVs)
+├── dypit-intents.test.ts              # 31 tests (allocation intent API + validation)
+├── dypit-generation.test.ts           # 17 tests (generate from intents)
+├── engine/strict-roll-order.test.ts   # 12 tests (strict roll ordering)
 └── db-constraints.test.ts             # Trigger/immutability tests
 ```
 
@@ -75,13 +79,12 @@ frontend/src/
 ├── lib/*.test.ts            # utils, compare
 ├── features/auth/RequireAuth.test.tsx
 ├── pages/LoginPage.test.tsx
-├── pages/portal/PortalPage.test.tsx
 └── (no component tests yet; Playwright smoke optional)
 ```
 
 ```bash
 # From /frontend
-npx vitest run src/pages/portal/PortalPage.test.tsx
+npx vitest run src/pages/admin/AllocationBuilderPage.test.tsx
 ```
 
 ## Database Fixtures (tests/helpers/)
@@ -123,6 +126,15 @@ SELECT id AS rid FROM seating_runs WHERE seed = 'perf-export' \gset
 INSERT ... WHERE r.id = :'rid';
 ```
 
+### DYPIT: proving a CHECK constraint really fires
+
+A `CHECK` constraint only rejects an explicit `FALSE`. An expression like
+`(a IS NULL AND b IS NULL) OR (a >= 1 AND b >= 1)` evaluates to `NULL` when only
+one side is set, so a half-specified grid would silently pass. The seat-grid
+constraint therefore uses `CASE` to force a real boolean. Verify such constraints
+with a PL/pgSQL harness that asserts BLOCKED vs ACCEPTED per case (see the
+11-case pattern used during the DYPIT migration).
+
 ### Trigger Names
 
 ```sql
@@ -144,11 +156,24 @@ trg_runs_published_immutable          -- on seating_runs (BEFORE UPDATE/DELETE)
 | Exams | 13 | preview stats, clash detection, registration |
 | Seating Generate | 18 | 422 on failure, FAILED run, history, regen |
 | Publish/Unpublish | 8 | stale block, re-validate, history |
-| Student Portal | 9 | 403/404, slip PDF, past/upcoming split |
 | Exports | 18 | formats, watermark, 5k perf (csv<15s, xlsx<30s) |
+| DYPIT rolls | 15 | roll parsing, numeric ranges past serial 99, overlap |
+| DYPIT curriculum | 25 | intake 1,170, per-branch subjects, FE group swap |
+| DYPIT intents | 31 | create/update/delete, EMPTY_RANGE, ROOM_TOO_SMALL, RANGE_OVERLAP, BENCH_OVERLAP, auto bench offset |
+| DYPIT generation | 17 | seats exactly the range, seatOffset, grid, strict order, reproducible seed, atomic failure |
+| Strict roll order | 12 | ascending roll order, numeric past 99, deterministic, skips search |
 | DB Constraints | 6 | immutability triggers, partial unique index |
 
-**Total: 16 files, 223 backend tests + 5 files, 29 frontend tests.**
+**Total: 20 files, 311 backend tests + 5 files, 34 frontend tests.**
+
+## DYPIT Fixtures
+
+`tests/dypit-*.test.ts` build their own world: an academic year, the `AIDS`/`CE`
+departments, rooms with generated benches, and cohorts of students whose roll
+numbers follow `SE-AIDS-C_07`. They do **not** depend on `npm run seed:dypit`.
+
+The curriculum tests read the real spreadsheets from `backend/seed-data/`, so a
+corrupted source file fails the suite rather than silently changing behaviour.
 
 ## Adding a Test
 

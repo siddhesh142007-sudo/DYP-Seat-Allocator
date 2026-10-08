@@ -3,6 +3,10 @@
 This document records trade-offs, known issues, and areas for future improvement.
 Each entry includes the rationale and suggested mitigation.
 
+> **DYPIT fork:** items 17+ below are specific to the DYPIT deployment
+> (Dr. D. Y. Patil Institute of Technology, Pimpri) — intent-driven allocation,
+> an administrator-only access model, and the SPPU curriculum import.
+
 ---
 
 ## 1. Seat Capacity Trigger Performance
@@ -240,3 +244,72 @@ Each entry includes the rationale and suggested mitigation.
 | 14 | Audit log growth | Low | Future partitioning |
 | 15 | TZ handling | Medium | Documented; set server TZ |
 | 16 | No multi-tenancy | N/A | Out of scope |
+---
+
+## DYPIT-specific (items 17+)
+
+### 17. Allocation is per-block, not globally optimised
+
+**Issue:** Each allocation intent is an independent sub-plan (its own students, room, bench window and history). The engine never moves a student *between* the rooms an administrator assigned, so a global optimum across rooms is not reached.
+
+**Why:** The college asks the administrator to choose which room a roll range sits in. Honouring that instruction is the requirement; silently relocating students would defeat it.
+
+**Mitigation:** The administrator sets `seatOffset` and an optional `rows × cols` grid per block, so room utilisation is controlled explicitly. The local search still optimises *within* each block.
+
+---
+
+### 18. Strict roll order does not avoid previous seats
+
+**Issue:** A block marked `strictRollOrder` seats students in ascending roll number and skips local search entirely, so its arrangement is identical on every paper.
+
+**Why:** That is the point of the option — an invigilator-friendly, readable order. Any swap would break the ordering.
+
+**Mitigation:** Use the shuffled default for normal papers; use strict order deliberately when readability matters more than variety.
+
+---
+
+### 19. No admission-cohort field on students
+
+**Issue:** Roll numbers carry no admission year (`SE-AIDS-C_07` means "2nd-year AIDS division C serial 07"). This is unique only because students are promoted `SE → TE → BE`, so one cohort occupies each year code at a time.
+
+**Impact:** Historical data spanning more than one full four-year cycle would collide. Anyone adding an `admissionYear` column later must migrate the unique constraint from `roll_number` to `(roll_number, admission_year)`.
+
+**Why:** Confirmed with the college; adding the field would mean threading it through every student query for no present benefit.
+
+---
+
+### 20. SPPU curriculum is reference-only
+
+**Issue:** The `subjects` table is populated from the SPPU spreadsheets but never drives seating, scheduling or clash detection. Room clashes are still time-slot based, not subject based.
+
+**Why:** Seating is driven by an exam plus the administrator's intents. Curriculum data exists for display and future scheduling work.
+
+**Note:** The parsers degrade gracefully rather than failing on an odd source row — a curriculum typo must never block running an exam. Multi-semester source headers are anchored to each year's first semester (assumption 101), and a test asserts no subject is ever filed under a semester its year does not have.
+
+---
+
+### 21. Range resolution loads a whole cohort into memory
+
+**Issue:** Resolving a roll range fetches the cohort by roll-number prefix, then filters on the numeric serial in memory. Cohorts are at most a few hundred students so this is cheap, but it is not a pure SQL `WHERE serial BETWEEN …`.
+
+**Why:** Serials are zero-padded to a *minimum* of two digits, so `01..09` and `100..105` have different string widths. A SQL suffix match cannot express the numeric range correctly; `gen_random_uuid()`-style parsing in SQL would be slower and less readable.
+
+**Mitigation:** If cohorts ever reach thousands, add a generated `serial` column with a numeric index.
+
+---
+
+### 22. Bench windows are validated per block, not globally optimised
+
+**Issue:** When an intent omits `seatOffset`, it is placed at the first free bench window *after* the existing blocks in that room. This is deterministic and safe, but it does not compact or re-order blocks.
+
+**Why:** An administrator who places blocks out of order gets gaps. Re-packing silently would move students between bench windows they may have already published.
+
+---
+
+### 23. No automatic room/clash inference for DYPIT
+
+**Issue:** DYPIT generation uses only the rooms named in the intents. It does not consult the clash-detection or available-rooms logic the exam-wide generator uses.
+
+**Impact:** Two DYPIT exams overlapping in time will happily be assigned the same room unless the administrator notices.
+
+**Mitigation:** The classroom picker shows each room's free capacity, and the Allocation Builder shows planned block counts before generating. A future enhancement would warn when two active exams claim the same room.
