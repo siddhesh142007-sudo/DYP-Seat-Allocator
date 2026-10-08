@@ -1,0 +1,361 @@
+// College Exam Seating Management System — Prisma schema.
+// Source of truth for tables Prisma can express; CHECK constraints, the
+// partial unique index and triggers live in raw SQL migrations
+// (prisma/migrations/*_constraints_and_triggers).
+// Naming: DB is snake_case via @map/@@map; enums map to snake_case types.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums (Postgres enum types — these are the "enum-like checks" at DB level)
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  SUPER_ADMIN
+  EXAM_ADMIN
+  STUDENT
+
+  @@map("user_role")
+}
+
+enum EntityStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("entity_status")
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("student_status")
+}
+
+enum ClassroomStatus {
+  AVAILABLE
+  UNAVAILABLE
+
+  @@map("classroom_status")
+}
+
+enum SeatStatus {
+  AVAILABLE
+  DISABLED
+
+  @@map("seat_status")
+}
+
+enum ExamStatus {
+  PLANNED
+  COMPLETED
+  CANCELLED
+
+  @@map("exam_status")
+}
+
+enum SeatingStatus {
+  NOT_GENERATED
+  DRAFT
+  VALIDATED
+  PUBLISHED
+
+  @@map("seating_status")
+}
+
+enum RegistrationStatus {
+  REGISTERED
+  ABSENT
+  WITHHELD
+  REMOVED
+
+  @@map("registration_status")
+}
+
+enum RunStatus {
+  DRAFT
+  VALIDATED
+  PUBLISHED
+  FAILED
+  SUPERSEDED
+
+  @@map("run_status")
+}
+
+// ---------------------------------------------------------------------------
+// Identity & master data
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String       @id @default(uuid()) @db.Uuid
+  email        String?      @unique @db.VarChar(255)
+  name         String       @db.VarChar(255)
+  role         UserRole     @default(STUDENT)
+  passwordHash String       @map("password_hash") @db.VarChar(255)
+  status       EntityStatus @default(ACTIVE)
+  // Bumped on logout / password change to revoke every issued refresh token.
+  tokenVersion Int          @default(0) @map("token_version")
+  // True when the account was created with a default password (or admin-reset) and must rotate it on first login.
+  mustChangePassword Boolean @default(false) @map("must_change_password")
+  studentId    String?      @unique @map("student_id") @db.Uuid
+  student      Student?     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  auditLogs      AuditLog[]
+  runsGenerated  SeatingRun[] @relation("RunGeneratedBy")
+  runsPublished  SeatingRun[] @relation("RunPublishedBy")
+  settingsEdited Setting[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("users")
+}
+
+model AcademicYear {
+  id         String       @id @default(uuid()) @db.Uuid
+  name       String       @unique @db.VarChar(100)
+  code       String?      @unique @db.VarChar(20)
+  orderIndex Int          @default(0) @map("order_index")
+  status     EntityStatus @default(ACTIVE)
+
+  students    Student[]
+  exams       Exam[]
+  allocations SeatingAllocation[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status])
+  @@map("academic_years")
+}
+
+model Department {
+  id     String       @id @default(uuid()) @db.Uuid
+  name   String       @db.VarChar(150)
+  code   String       @unique @db.VarChar(50)
+  status EntityStatus @default(ACTIVE)
+
+  students    Student[]
+  allocations SeatingAllocation[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status])
+  @@map("departments")
+}
+
+model Student {
+  id             String        @id @default(uuid()) @db.Uuid
+  rollNumber     String        @unique @map("roll_number") @db.VarChar(50)
+  name           String        @db.VarChar(255)
+  email          String?       @db.VarChar(255)
+  division       String?       @db.VarChar(50)
+  status         StudentStatus @default(ACTIVE)
+  academicYearId String        @map("academic_year_id") @db.Uuid
+  departmentId   String        @map("department_id") @db.Uuid
+
+  academicYear  AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  department    Department          @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  user          User?
+  registrations ExamRegistration[]
+  allocations   SeatingAllocation[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([academicYearId, departmentId, status])
+  @@index([departmentId])
+  @@index([status])
+  @@map("students")
+}
+
+// ---------------------------------------------------------------------------
+// Classrooms & seats
+// ---------------------------------------------------------------------------
+
+model Classroom {
+  id         String          @id @default(uuid()) @db.Uuid
+  roomNumber String          @unique @map("room_number") @db.VarChar(50)
+  building   String?         @db.VarChar(100)
+  floor      String?         @db.VarChar(20)
+  status     ClassroomStatus @default(AVAILABLE)
+  capacity   Int             @default(0)
+  notes      String?         @db.Text
+
+  seats       Seat[]
+  allocations SeatingAllocation[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status])
+  @@map("classrooms")
+}
+
+model Seat {
+  id          String     @id @default(uuid()) @db.Uuid
+  classroomId String     @map("classroom_id") @db.Uuid
+  benchNumber Int        @map("bench_number")
+  status      SeatStatus @default(AVAILABLE)
+  rowNo       Int?       @map("row_no")
+  colNo       Int?       @map("col_no")
+
+  classroom   Classroom           @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  allocations SeatingAllocation[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  // Also serves as the (classroom_id) index required by the spec.
+  @@unique([classroomId, benchNumber])
+  @@map("seats")
+}
+
+// ---------------------------------------------------------------------------
+// Exams & registrations
+// ---------------------------------------------------------------------------
+
+model Exam {
+  id             String        @id @default(uuid()) @db.Uuid
+  subject        String        @db.VarChar(255)
+  paperCode      String?       @map("paper_code") @db.VarChar(50)
+  semester       Int?
+  examDate       DateTime      @map("exam_date") @db.Date
+  startTime      DateTime      @map("start_time") @db.Time
+  endTime        DateTime      @map("end_time") @db.Time
+  status         ExamStatus    @default(PLANNED)
+  seatingStatus  SeatingStatus @default(NOT_GENERATED) @map("seating_status")
+  isStale        Boolean       @default(false) @map("is_stale")
+  academicYearId String        @map("academic_year_id") @db.Uuid
+
+  academicYear  AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  registrations ExamRegistration[]
+  runs          SeatingRun[]
+  allocations   SeatingAllocation[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  // CHECK (end_time > start_time) enforced in raw SQL migration.
+  @@index([academicYearId])
+  @@index([examDate])
+  @@map("exams")
+}
+
+model ExamRegistration {
+  id           String             @id @default(uuid()) @db.Uuid
+  examId       String             @map("exam_id") @db.Uuid
+  studentId    String             @map("student_id") @db.Uuid
+  status       RegistrationStatus @default(REGISTERED)
+  registeredAt DateTime           @default(now()) @map("registered_at") @db.Timestamptz(3)
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@unique([examId, studentId])
+  @@index([studentId])
+  @@map("exam_registrations")
+}
+
+// ---------------------------------------------------------------------------
+// Seating runs & allocations
+// ---------------------------------------------------------------------------
+
+model SeatingRun {
+  id               String    @id @default(uuid()) @db.Uuid
+  examId           String    @map("exam_id") @db.Uuid
+  seed             String    @db.VarChar(64)
+  status           RunStatus @default(DRAFT)
+  algorithmVersion String    @map("algorithm_version") @db.VarChar(50)
+  config           Json
+  totalPenalty     Float?    @map("total_penalty") @db.DoublePrecision
+  stats            Json?
+  validationReport Json?     @map("validation_report")
+  failure          Json?
+  generatedBy      String?   @map("generated_by") @db.Uuid
+  generatedAt      DateTime  @default(now()) @map("generated_at") @db.Timestamptz(3)
+  publishedBy      String?   @map("published_by") @db.Uuid
+  publishedAt      DateTime? @map("published_at") @db.Timestamptz(3)
+
+  exam            Exam                @relation(fields: [examId], references: [id], onDelete: Restrict)
+  generatedByUser User?               @relation("RunGeneratedBy", fields: [generatedBy], references: [id], onDelete: SetNull)
+  publishedByUser User?               @relation("RunPublishedBy", fields: [publishedBy], references: [id], onDelete: SetNull)
+  allocations     SeatingAllocation[]
+
+  // Only one active run per exam is enforced by a partial unique index in
+  // raw SQL: UNIQUE (exam_id) WHERE status NOT IN ('SUPERSEDED', 'FAILED').
+  @@index([examId])
+  @@index([status])
+  @@map("seating_runs")
+}
+
+model SeatingAllocation {
+  id             String    @id @default(uuid()) @db.Uuid
+  runId          String    @map("run_id") @db.Uuid
+  examId         String    @map("exam_id") @db.Uuid
+  studentId      String    @map("student_id") @db.Uuid
+  classroomId    String    @map("classroom_id") @db.Uuid
+  seatId         String    @map("seat_id") @db.Uuid
+  academicYearId String    @map("academic_year_id") @db.Uuid
+  departmentId   String    @map("department_id") @db.Uuid
+  generatedAt    DateTime  @default(now()) @map("generated_at") @db.Timestamptz(3)
+  publishedAt    DateTime? @map("published_at") @db.Timestamptz(3)
+
+  run          SeatingRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  exam         Exam         @relation(fields: [examId], references: [id], onDelete: Restrict)
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  classroom    Classroom    @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  seat         Seat         @relation(fields: [seatId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  department   Department   @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  // Hard constraints 7 (no duplicate student, no duplicate seat per run):
+  @@unique([runId, studentId])
+  @@unique([runId, seatId])
+  // Seat-belongs-to-room integrity enforced by trigger in raw SQL.
+  @@index([studentId])
+  @@index([examId])
+  @@index([classroomId])
+  @@map("seating_allocations")
+}
+
+// ---------------------------------------------------------------------------
+// Audit & settings
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String   @db.VarChar(100)
+  entityType  String   @map("entity_type") @db.VarChar(100)
+  entityId    String?  @map("entity_id") @db.VarChar(100)
+  metadata    Json?
+  ip          String?  @db.VarChar(45)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+model Setting {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique @db.VarChar(100)
+  value     Json
+  updatedBy String?  @map("updated_by") @db.Uuid
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  updatedByUser User? @relation(fields: [updatedBy], references: [id], onDelete: SetNull)
+
+  @@map("settings")
+}
