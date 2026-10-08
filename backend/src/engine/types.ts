@@ -65,6 +65,17 @@ export type EngineConfig = {
   maxPerDepartment?: number | null;
   /** Candidate seats sampled per student during greedy construction (default 16). */
   kCandidates?: number;
+  /**
+   * Seat students in strict roll-number order instead of shuffling.
+   *
+   * Used by a DYPIT allocation intent whose administrator asked for a readable,
+   * invigilator-friendly ordering. Deterministic: students ascend by roll
+   * number and fill the room's benches in bench order, and the local-search
+   * phase is skipped entirely because any swap would break the ordering.
+   * Penalties are still reported so the caller can see what the ordered
+   * arrangement costs versus a shuffled one.
+   */
+  strictRollOrder?: boolean;
 };
 
 export type EngineInput = {

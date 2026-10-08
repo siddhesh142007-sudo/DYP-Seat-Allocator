@@ -42,6 +42,24 @@ function rollPrefixAndNumber(roll: string | undefined): [string, number] | null 
   return [roll.slice(0, m.index), Number(m[1])];
 }
 
+/**
+ * Total order over roll numbers that compares the trailing number numerically.
+ *
+ * A plain string comparison mis-orders zero-padded serials: "SE-CE-A_100"
+ * sorts before "SE-CE-A_9", because "1" < "9". Anything sharing a prefix is
+ * therefore compared on its numeric tail, and falls back to a stable string
+ * comparison only when the prefixes differ.
+ */
+export function compareRollNumbers(a: string, b: string): number {
+  const ma = rollPrefixAndNumber(a);
+  const mb = rollPrefixAndNumber(b);
+  if (ma && mb && ma[0] === mb[0]) {
+    if (ma[1] !== mb[1]) return ma[1] < mb[1] ? -1 : 1;
+    return 0;
+  }
+  return a === b ? 0 : a < b ? -1 : 1;
+}
+
 /** True when two roll numbers share a prefix and differ by exactly 1 (…001 / …002). */
 function consecutiveRolls(a: [string, number] | null, b: [string, number] | null): boolean {
   return Boolean(a && b && a[0] === b[0] && Math.abs(a[1] - b[1]) === 1);

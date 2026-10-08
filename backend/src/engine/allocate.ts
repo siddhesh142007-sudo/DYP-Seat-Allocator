@@ -1,6 +1,6 @@
 import { makePrng, fisherYates } from './prng.js';
 import type { Assignment, EngineInput, EngineResult, Room, Student } from './types.js';
-import { buildContext, place, penaltyAt, seatKey, scoreSolution } from './scoring.js';
+import { buildContext, compareRollNumbers, place, penaltyAt, seatKey, scoreSolution } from './scoring.js';
 
 type FreeSeat = { key: string; roomId: string; seatId: string; benchNo: number };
 
@@ -271,6 +271,60 @@ export function allocate(input: EngineInput): EngineResult {
   return {
     ok: true,
     assignments: [...ctx.assigned.values()].sort(byStudentId),
+    penalty: scored.penalty,
+    breakdown: scored.breakdown,
+    stats: { ...scored.stats, timeMs: t1 - t0, iterations: 0 },
+    seed,
+    timing: { totalMs: t1 - t0, allocateMs: t1 - t0, improveMs: 0, validateMs: 0 },
+  };
+}
+
+/**
+ * Deterministic roll-order seating (config.strictRollOrder).
+ *
+ * Students ascend by roll number and fill each room's benches in bench order.
+ * No sampling, no department grouping, no local search - any swap or
+ * candidate choice would break the ordering the administrator asked for.
+ * Penalties are still computed so the caller can see what ordering costs
+ * compared with a shuffled plan.
+ */
+export function allocateStrictRollOrder(input: EngineInput): EngineResult {
+  const t0 = Date.now();
+  const seed = String(input.config.seed ?? 'roll-order');
+
+  const usable = input.rooms.filter((r) => enabledCount(r) > 0);
+  // Rooms in a stable order (the caller's intent order), benches ascending.
+  const seatsInOrder: FreeSeat[] = [];
+  for (const room of usable) {
+    const seats = room.seats
+      .filter((s) => s.status !== 'DISABLED')
+      .sort((a, b) => a.benchNo - b.benchNo)
+      .map((s) => ({ key: seatKey(room.id, s.id), roomId: room.id, seatId: s.id, benchNo: s.benchNo }));
+    seatsInOrder.push(...seats);
+  }
+
+  // Numeric-aware: a string sort would place "…_100" before "…_9".
+  const students = [...input.students].sort((a, b) => {
+    const byRoll = compareRollNumbers(a.rollNo, b.rollNo);
+    return byRoll !== 0 ? byRoll : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+
+  if (seatsInOrder.length < students.length) return insufficient(students.length, seatsInOrder.length);
+
+  const assignments: Assignment[] = students.map((st, i) => {
+    const seat = seatsInOrder[i]!;
+    return { studentId: st.id, roomId: seat.roomId, seatId: seat.seatId, benchNo: seat.benchNo };
+  });
+
+  const rooms = usable.map((r) => ({ ...r, seats: r.seats.filter((s) => s.status !== 'DISABLED') }));
+  const ctx = buildContext({ ...input, rooms });
+  for (const a of assignments) place(ctx, a);
+  const scored = scoreSolution(ctx);
+
+  const t1 = Date.now();
+  return {
+    ok: true,
+    assignments: [...assignments].sort(byStudentId),
     penalty: scored.penalty,
     breakdown: scored.breakdown,
     stats: { ...scored.stats, timeMs: t1 - t0, iterations: 0 },

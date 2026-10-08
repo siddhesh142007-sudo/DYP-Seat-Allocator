@@ -1,6 +1,6 @@
 import type { EngineInput, EngineResult } from './types.js';
 import { feasibility } from './feasibility.js';
-import { allocate } from './allocate.js';
+import { allocate, allocateStrictRollOrder } from './allocate.js';
 import { improve } from './improve.js';
 import { validate } from './validate.js';
 
@@ -15,14 +15,19 @@ export function generateSeating(input: EngineInput): EngineResult {
   if (feas) return feas;
 
   const a0 = Date.now();
-  let res = allocate(input);
+  const strictRollOrder = input.config.strictRollOrder === true;
+  // Strict roll order must stay ordered, so the shuffle-and-improve phases are
+  // bypassed entirely rather than run and then undone.
+  let res = strictRollOrder ? allocateStrictRollOrder(input) : allocate(input);
   const allocateMs = Date.now() - a0;
   if (!res.ok) return res;
 
   const i0 = Date.now();
-  res = improve(input, res);
+  if (!strictRollOrder) {
+    res = improve(input, res);
+    if (!res.ok) return res;
+  }
   const improveMs = Date.now() - i0;
-  if (!res.ok) return res;
 
   const v0 = Date.now();
   const report = validate(input, res.assignments);
