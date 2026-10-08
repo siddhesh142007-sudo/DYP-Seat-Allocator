@@ -2,7 +2,6 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { ConflictError, NotFoundError } from '../../common/errors.js';
 import { auditLog } from '../audit/audit.service.js';
-import { hashPassword } from '../auth/auth.utils.js';
 import type { CreateStudentInput, ListStudentsQuery, UpdateStudentInput } from './students.schemas.js';
 
 const STUDENT_INCLUDE = {
@@ -10,20 +9,6 @@ const STUDENT_INCLUDE = {
   department: { select: { id: true, name: true, code: true } },
   user: { select: { id: true, role: true, status: true } },
 } as const;
-
-/**
- * Default password policy for auto-created student logins:
- * "Welcome@<ROLL>" padded with digits to at least 8 characters.
- * The account is flagged mustChangePassword until the student rotates it.
- */
-export function defaultPasswordForRoll(rollNumber: string): string {
-  let password = `Welcome@${rollNumber}`;
-  let pad = 1;
-  while (password.length < 8) {
-    password += String(pad++ % 10);
-  }
-  return password;
-}
 
 export async function listStudents(query: ListStudentsQuery) {
   const where: Prisma.StudentWhereInput = {
@@ -71,11 +56,6 @@ export async function createStudent(input: CreateStudentInput, actorId: string, 
   const duplicate = await prisma.student.findUnique({ where: { rollNumber: input.rollNumber } });
   if (duplicate) throw new ConflictError('A student with this roll number already exists');
 
-  if (input.createLogin && input.email) {
-    const emailClash = await prisma.user.findFirst({ where: { email: { equals: input.email, mode: 'insensitive' } } });
-    if (emailClash) throw new ConflictError('A user with this email already exists');
-  }
-
   try {
     const student = await prisma.$transaction(async (tx) => {
       const created = await tx.student.create({
@@ -89,20 +69,6 @@ export async function createStudent(input: CreateStudentInput, actorId: string, 
           departmentId: input.departmentId,
         },
       });
-      if (input.createLogin) {
-        await tx.user.create({
-          data: {
-            name: created.name,
-            email: created.email,
-            role: 'STUDENT',
-            status: created.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
-            passwordHash: await hashPassword(input.password ?? defaultPasswordForRoll(created.rollNumber)),
-            studentId: created.id,
-            mustChangePassword: true,
-          },
-        });
-      }
-      // Re-read so the `user` include reflects the login created above.
       return tx.student.findUniqueOrThrow({ where: { id: created.id }, include: STUDENT_INCLUDE });
     });
 
@@ -111,7 +77,7 @@ export async function createStudent(input: CreateStudentInput, actorId: string, 
       action: 'student.create',
       entityType: 'student',
       entityId: student.id,
-      metadata: { rollNumber: student.rollNumber, createLogin: input.createLogin },
+      metadata: { rollNumber: student.rollNumber },
       ip,
     });
     return student;
@@ -133,13 +99,6 @@ export async function updateStudent(id: string, patch: UpdateStudentInput, actor
     await assertYearAndDept(patch.academicYearId ?? existing.academicYearId, patch.departmentId ?? existing.departmentId);
   }
 
-  if (patch.createLogin && !existing.user) {
-    if (patch.email) {
-      const emailClash = await prisma.user.findFirst({ where: { email: { equals: patch.email, mode: 'insensitive' } } });
-      if (emailClash) throw new ConflictError('A user with this email already exists');
-    }
-  }
-
   try {
     const student = await prisma.$transaction(async (tx) => {
       await tx.student.update({
@@ -154,23 +113,6 @@ export async function updateStudent(id: string, patch: UpdateStudentInput, actor
         },
       });
 
-      if (patch.createLogin && !existing.user) {
-        await tx.user.create({
-          data: {
-            name: patch.name ?? existing.name,
-            email: patch.email !== undefined ? patch.email : existing.email,
-            role: 'STUDENT',
-            status: (patch.status ?? existing.status) === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
-            passwordHash: await hashPassword(patch.password ?? defaultPasswordForRoll(existing.rollNumber)),
-            studentId: existing.id,
-            mustChangePassword: true,
-          },
-        });
-      } else if (existing.user && patch.status !== undefined) {
-        // Keep the login account in lockstep with the student's status.
-        await tx.user.update({ where: { id: existing.user.id }, data: { status: patch.status } });
-      }
-      // Re-read so the `user` include reflects the login created above.
       return tx.student.findUniqueOrThrow({ where: { id }, include: STUDENT_INCLUDE });
     });
 

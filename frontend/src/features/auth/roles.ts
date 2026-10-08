@@ -1,7 +1,8 @@
 import type { UserRole } from '../../api/authStore';
 
-export function homeForRole(role: UserRole): string {
-  return role === 'STUDENT' ? '/portal' : '/admin/dashboard';
+/** DYPIT is administrator-only: everyone lands on the dashboard. */
+export function homeForRole(_role: UserRole): string {
+  return '/admin/dashboard';
 }
 
 export function roleLabel(role: UserRole): string {
@@ -10,7 +11,5 @@ export function roleLabel(role: UserRole): string {
       return 'Super Admin';
     case 'EXAM_ADMIN':
       return 'Exam Admin';
-    case 'STUDENT':
-      return 'Student';
   }
 }

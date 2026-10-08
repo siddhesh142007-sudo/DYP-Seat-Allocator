@@ -3,7 +3,7 @@ import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { createTestPool, truncateAll } from './helpers/db.js';
-import { createTestUser, createTestStudent } from './helpers/auth.js';
+import { createTestUser } from './helpers/auth.js';
 import { createApp } from '../src/app.js';
 import { prisma, disconnectPrisma } from '../src/db/prisma.js';
 
@@ -12,7 +12,6 @@ const PW = 'AdminSecret123!';
 let pool: pg.Pool;
 let app: ReturnType<typeof createApp>;
 let superToken: string;
-let studentToken: string;
 let yearName: string;
 let deptCode: string;
 
@@ -21,12 +20,8 @@ beforeAll(async () => {
   await truncateAll(pool);
   app = createApp();
   const superAdmin = await createTestUser(pool, { role: 'SUPER_ADMIN', password: PW, email: 'sa-imp@test.local' });
-  const studentRow = await createTestStudent(pool, { rollPrefix: 'IM' });
-  const studentUser = await createTestUser(pool, { role: 'STUDENT', password: PW, studentId: studentRow.id });
   superToken = (await request(app).post('/api/v1/auth/login').send({ identifier: superAdmin.email, password: PW })).body
     .accessToken;
-  studentToken = (await request(app).post('/api/v1/auth/login').send({ identifier: studentUser.email, password: PW }))
-    .body.accessToken;
 
   const suffix = randomUUID().slice(0, 8);
   yearName = `Import Year ${suffix}`;
@@ -102,9 +97,9 @@ describe('GET /students/import/template', () => {
     expect((res.body as Buffer).length).toBeGreaterThan(100); // xlsx zip payload
   });
 
-  it('rejects STUDENT role with 403', async () => {
-    const res = await request(app).get('/api/v1/students/import/template').set(auth(studentToken));
-    expect(res.status).toBe(403);
+  it('rejects anonymous requests with 401', async () => {
+    const res = await request(app).get('/api/v1/students/import/template');
+    expect(res.status).toBe(401);
   });
 });
 

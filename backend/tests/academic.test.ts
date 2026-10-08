@@ -12,10 +12,8 @@ let pool: pg.Pool;
 let app: ReturnType<typeof createApp>;
 let superAdmin: TestUser;
 let examAdmin: TestUser;
-let studentUser: TestUser;
 let superToken: string;
 let examToken: string;
-let studentToken: string;
 
 beforeAll(async () => {
   pool = createTestPool(5);
@@ -23,14 +21,10 @@ beforeAll(async () => {
   app = createApp();
   superAdmin = await createTestUser(pool, { role: 'SUPER_ADMIN', password: PW, email: 'sa-year@test.local' });
   examAdmin = await createTestUser(pool, { role: 'EXAM_ADMIN', password: PW, email: 'ea-year@test.local' });
-  const studentRow = await createTestStudent(pool, { rollPrefix: 'YR' });
-  studentUser = await createTestUser(pool, { role: 'STUDENT', password: PW, studentId: studentRow.id });
   superToken = (await request(app).post('/api/v1/auth/login').send({ identifier: superAdmin.email, password: PW })).body
     .accessToken;
   examToken = (await request(app).post('/api/v1/auth/login').send({ identifier: examAdmin.email, password: PW })).body
     .accessToken;
-  studentToken = (await request(app).post('/api/v1/auth/login').send({ identifier: studentUser.email, password: PW }))
-    .body.accessToken;
 }, 60000);
 
 afterAll(async () => {
@@ -48,10 +42,10 @@ describe('academic years', () => {
     expect(res.status).toBe(401);
   });
 
-  it('rejects STUDENT role with 403', async () => {
-    const res = await request(app).get('/api/v1/academic-years').set(auth(studentToken));
-    expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe('FORBIDDEN');
+  it('rejects anonymous requests with 401', async () => {
+    const res = await request(app).get('/api/v1/academic-years');
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHORIZED');
   });
 
   it('allows EXAM_ADMIN to list and create', async () => {

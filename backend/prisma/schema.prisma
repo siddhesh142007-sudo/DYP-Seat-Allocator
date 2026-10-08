@@ -20,7 +20,6 @@ datasource db {
 enum UserRole {
   SUPER_ADMIN
   EXAM_ADMIN
-  STUDENT
 
   @@map("user_role")
 }
@@ -119,7 +118,7 @@ model User {
   id                 String       @id @default(uuid()) @db.Uuid
   email              String?      @unique @db.VarChar(255)
   name               String       @db.VarChar(255)
-  role               UserRole     @default(STUDENT)
+  role               UserRole     @default(EXAM_ADMIN)
   passwordHash       String       @map("password_hash") @db.VarChar(255)
   status             EntityStatus @default(ACTIVE)
   // Bumped on logout / password change to revoke every issued refresh token.

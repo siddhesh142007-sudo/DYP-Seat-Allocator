@@ -3,19 +3,16 @@ import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { createTestPool, truncateAll } from './helpers/db.js';
-import { createTestUser, createTestStudent, type TestUser } from './helpers/auth.js';
+import { createTestUser, type TestUser } from './helpers/auth.js';
 import { createApp } from '../src/app.js';
 import { prisma, disconnectPrisma } from '../src/db/prisma.js';
-import { defaultPasswordForRoll } from '../src/modules/students/students.service.js';
 
 const PW = 'AdminSecret123!';
 
 let pool: pg.Pool;
 let app: ReturnType<typeof createApp>;
 let superAdmin: TestUser;
-let studentUser: TestUser;
 let superToken: string;
-let studentToken: string;
 let yearId: string;
 let deptId: string;
 let otherDeptId: string;
@@ -25,12 +22,8 @@ beforeAll(async () => {
   await truncateAll(pool);
   app = createApp();
   superAdmin = await createTestUser(pool, { role: 'SUPER_ADMIN', password: PW, email: 'sa-stu@test.local' });
-  const studentRow = await createTestStudent(pool, { rollPrefix: 'SP' });
-  studentUser = await createTestUser(pool, { role: 'STUDENT', password: PW, studentId: studentRow.id });
   superToken = (await request(app).post('/api/v1/auth/login').send({ identifier: superAdmin.email, password: PW })).body
     .accessToken;
-  studentToken = (await request(app).post('/api/v1/auth/login').send({ identifier: studentUser.email, password: PW }))
-    .body.accessToken;
 
   const suffix = randomUUID().slice(0, 8);
   yearId = (
@@ -62,12 +55,11 @@ async function createStudent(overrides: Record<string, unknown> = {}) {
 }
 
 describe('POST /students', () => {
-  it('rejects STUDENT role with 403', async () => {
+  it('rejects anonymous requests with 401', async () => {
     const res = await request(app)
       .post('/api/v1/students')
-      .set(auth(studentToken))
       .send({ rollNumber: 'X1', name: 'N', academicYearId: yearId, departmentId: deptId });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
   });
 
   it('creates a student without login', async () => {
@@ -79,32 +71,15 @@ describe('POST /students', () => {
     expect(res.body.student.department.id).toBe(deptId);
   });
 
-  it('creates a student with a login: default password, mustChangePassword flag', async () => {
+  it('never creates a login account for a student (admin-only system)', async () => {
     const roll = `LG${randomUUID().slice(0, 8)}`;
-    const res = await createStudent({ rollNumber: roll, name: 'Login Student', createLogin: true, email: `${roll}@test.local` });
+    const res = await createStudent({ rollNumber: roll, name: 'No Login Student', email: `${roll}@test.local` });
     expect(res.status).toBe(201);
-    expect(res.body.student.user).toMatchObject({ role: 'STUDENT', status: 'ACTIVE' });
-
-    const user = await prisma.user.findUnique({ where: { studentId: res.body.student.id } });
-    expect(user).not.toBeNull();
-    expect(user!.mustChangePassword).toBe(true);
-    expect(user!.passwordHash).not.toContain('Welcome@');
-
-    // The default password works and the flag is surfaced to the client.
-    const login = await request(app)
-      .post('/api/v1/auth/login')
-      .send({ identifier: roll, password: defaultPasswordForRoll(roll) });
-    expect(login.status).toBe(200);
-    expect(login.body.user.mustChangePassword).toBe(true);
-
-    // Changing the password clears the flag and returns a fresh session.
-    const changed = await request(app)
-      .post('/api/v1/auth/change-password')
-      .set(auth(login.body.accessToken))
-      .send({ currentPassword: defaultPasswordForRoll(roll), newPassword: 'BrandNewPass123!' });
-    expect(changed.status).toBe(200);
-    expect(changed.body.user.mustChangePassword).toBe(false);
-    expect(typeof changed.body.accessToken).toBe('string');
+    expect(res.body.student.user).toBeNull();
+    // No user row exists for this roll number, and roll-number login is refused.
+    expect(await prisma.user.count({ where: { student: { rollNumber: roll } } })).toBe(0);
+    const login = await request(app).post('/api/v1/auth/login').send({ identifier: roll, password: 'anything123' });
+    expect(login.status).toBe(401);
   });
 
   it('rejects duplicate roll numbers with 409', async () => {
@@ -171,9 +146,9 @@ describe('GET /students', () => {
 });
 
 describe('PUT /students/:id and DELETE /students/:id', () => {
-  it('updates fields and syncs login status on deactivate/reactivate', async () => {
+  it('updates fields and tracks status on deactivate/reactivate', async () => {
     const roll = `UP${randomUUID().slice(0, 8)}`;
-    const created = await createStudent({ rollNumber: roll, name: 'Before Update', createLogin: true, email: `${roll}@test.local` });
+    const created = await createStudent({ rollNumber: roll, name: 'Before Update' });
     const id = created.body.student.id;
 
     const updated = await request(app)
@@ -186,17 +161,18 @@ describe('PUT /students/:id and DELETE /students/:id', () => {
     const deactivated = await request(app).delete(`/api/v1/students/${id}`).set(auth(superToken));
     expect(deactivated.status).toBe(200);
 
+    // Deactivate is a soft delete: the row survives with status INACTIVE and
+    // no user account is involved (DYPIT is administrator-only).
     const student = await prisma.student.findUnique({ where: { id } });
-    const user = await prisma.user.findUnique({ where: { studentId: id } });
     expect(student!.status).toBe('INACTIVE');
-    expect(user!.status).toBe('INACTIVE');
+    expect(await prisma.user.count({ where: { studentId: id } })).toBe(0);
 
     const reactivated = await request(app)
       .put(`/api/v1/students/${id}`)
       .set(auth(superToken))
       .send({ status: 'ACTIVE' });
     expect(reactivated.status).toBe(200);
-    expect((await prisma.user.findUnique({ where: { studentId: id } }))!.status).toBe('ACTIVE');
+    expect((await prisma.student.findUniqueOrThrow({ where: { id } })).status).toBe('ACTIVE');
 
     const audit = await prisma.auditLog.findFirst({ where: { action: 'student.deactivate', entityId: id } });
     expect(audit).not.toBeNull();

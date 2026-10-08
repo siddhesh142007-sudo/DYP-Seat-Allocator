@@ -13,7 +13,6 @@ let app: ReturnType<typeof createApp>;
 let superAdmin: TestUser;
 let superToken: string;
 let examToken: string;
-let studentToken: string;
 
 let year1Id: string;
 let year2Id: string;
@@ -39,10 +38,6 @@ beforeAll(async () => {
   ).body.accessToken;
   examToken = (
     await request(app).post('/api/v1/auth/login').send({ identifier: examAdmin.email, password: PW })
-  ).body.accessToken;
-  const studentUser = await createTestUser(pool, { role: 'STUDENT', password: PW, email: 'stu-dash@test.local' });
-  studentToken = (
-    await request(app).post('/api/v1/auth/login').send({ identifier: studentUser.email!, password: PW })
   ).body.accessToken;
 
   const dept = await prisma.department.create({ data: { name: 'Dashboard Dept', code: 'DASHD' } });
@@ -125,10 +120,10 @@ describe('Phase 8: GET /dashboard/summary', () => {
     expect(res.status).toBe(401);
   });
 
-  it('rejects STUDENT role with 403', async () => {
-    const res = await request(app).get('/api/v1/dashboard/summary').set(auth(studentToken));
-    expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe('FORBIDDEN');
+  it('rejects anonymous requests with 401', async () => {
+    const res = await request(app).get('/api/v1/dashboard/summary');
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHORIZED');
   });
 
   it('allows EXAM_ADMIN', async () => {
@@ -165,8 +160,8 @@ describe('Phase 8: GET /dashboard/summary', () => {
 });
 
 describe('Phase 8: GET /dashboard/charts', () => {
-  it('rejects STUDENT role with 403 and allows admins', async () => {
-    expect((await request(app).get('/api/v1/dashboard/charts').set(auth(studentToken))).status).toBe(403);
+  it('rejects anonymous requests with 401 and allows admins', async () => {
+    expect((await request(app).get('/api/v1/dashboard/charts')).status).toBe(401);
     expect((await request(app).get('/api/v1/dashboard/charts').set(auth(examToken))).status).toBe(200);
   });
 

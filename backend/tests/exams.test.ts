@@ -3,7 +3,7 @@ import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { createTestPool, truncateAll } from './helpers/db.js';
-import { createTestUser, createTestStudent, type TestUser } from './helpers/auth.js';
+import { createTestUser, type TestUser } from './helpers/auth.js';
 import { createApp } from '../src/app.js';
 import { prisma, disconnectPrisma } from '../src/db/prisma.js';
 
@@ -13,9 +13,7 @@ const EXAM_DATE = '2026-11-15';
 let pool: pg.Pool;
 let app: ReturnType<typeof createApp>;
 let superAdmin: TestUser;
-let studentUser: TestUser;
 let superToken: string;
-let studentToken: string;
 let yearA: string;
 let yearB: string;
 let deptX: string;
@@ -101,11 +99,7 @@ beforeAll(async () => {
   await truncateAll(pool);
   app = createApp();
   superAdmin = await createTestUser(pool, { role: 'SUPER_ADMIN', password: PW, email: `sa-exam-${suffix}@test.local` });
-  const studentRow = await createTestStudent(pool, { rollPrefix: 'EX' });
-  studentUser = await createTestUser(pool, { role: 'STUDENT', password: PW, studentId: studentRow.id });
   superToken = (await request(app).post('/api/v1/auth/login').send({ identifier: superAdmin.email, password: PW }))
-    .body.accessToken;
-  studentToken = (await request(app).post('/api/v1/auth/login').send({ identifier: studentUser.email, password: PW }))
     .body.accessToken;
 
   yearA = (await prisma.academicYear.create({ data: { name: `Exam Year A ${suffix}`, code: `EA${suffix}` } })).id;
@@ -536,13 +530,10 @@ describe('seating preview stats', () => {
 });
 
 describe('permissions and audit', () => {
-  it('requires authentication and admin roles', async () => {
+  it('requires authentication and lets admins through', async () => {
     expect((await request(app).get('/api/v1/exams')).status).toBe(401);
     expect((await request(app).post('/api/v1/exams').send({})).status).toBe(401);
-    expect(
-      (await request(app).post('/api/v1/exams').set(auth(studentToken)).send({ subject: 'x' })).status,
-    ).toBe(403);
-    expect((await request(app).get('/api/v1/exams').set(auth(studentToken))).status).toBe(403);
+    expect((await request(app).get('/api/v1/exams').set(auth(superToken))).status).toBe(200);
   });
 
   it('writes audit logs for exam mutations', async () => {

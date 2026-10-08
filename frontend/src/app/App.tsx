@@ -3,7 +3,6 @@ import { AuthProvider } from '../features/auth/AuthProvider';
 import { RequireAuth } from '../features/auth/RequireAuth';
 import { HomeRedirect } from '../features/auth/HomeRedirect';
 import { AdminShell } from '../components/layout/AdminShell';
-import { PortalShell } from '../components/layout/PortalShell';
 import { ToastProvider } from '../components/ui/Toast';
 import { LoginPage } from '../pages/LoginPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
@@ -19,9 +18,8 @@ import { SeatingPage } from '../pages/admin/SeatingPage';
 import { ExamSeatingPage } from '../pages/admin/ExamSeatingPage';
 import { SeatingVisualizePage } from '../pages/admin/SeatingVisualizePage';
 import { SeatingComparePage } from '../pages/admin/SeatingComparePage';
-import { PortalPage } from '../pages/portal/PortalPage';
 
-const ALL_ROLES = ['SUPER_ADMIN', 'EXAM_ADMIN', 'STUDENT'] as const;
+const ALL_ROLES = ['SUPER_ADMIN', 'EXAM_ADMIN'] as const;
 
 export function App() {
   return (
@@ -60,17 +58,6 @@ export function App() {
               <Route path="seating/compare" element={<SeatingComparePage />} />
               <Route path="exams/:examId/seating" element={<ExamSeatingPage />} />
               <Route path="exams/:examId/seating/visualize" element={<SeatingVisualizePage />} />
-            </Route>
-
-            <Route
-              path="/portal"
-              element={
-                <RequireAuth roles={['STUDENT']}>
-                  <PortalShell />
-                </RequireAuth>
-              }
-            >
-              <Route index element={<PortalPage />} />
             </Route>
 
             <Route path="*" element={<NotFoundPage />} />

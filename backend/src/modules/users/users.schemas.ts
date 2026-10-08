@@ -1,27 +1,15 @@
 import { z } from 'zod';
 
-const roleEnum = z.enum(['SUPER_ADMIN', 'EXAM_ADMIN', 'STUDENT']);
+const roleEnum = z.enum(['SUPER_ADMIN', 'EXAM_ADMIN']);
 const statusEnum = z.enum(['ACTIVE', 'INACTIVE']);
 
-export const createUserSchema = z
-  .object({
-    name: z.string().trim().min(1).max(255),
-    // Optional: student logins may authenticate by roll number instead.
-    email: z.string().trim().toLowerCase().email().max(255).optional(),
-    password: z.string().min(8, 'Password must be at least 8 characters').max(128),
-    role: roleEnum,
-    studentId: z.string().uuid().optional(),
-    status: statusEnum.optional(),
-  })
-  .superRefine((data, ctx) => {
-    if (data.role === 'STUDENT' && !data.studentId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['studentId'],
-        message: 'studentId is required for STUDENT users (login is via roll number)',
-      });
-    }
-  });
+export const createUserSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  email: z.string().trim().toLowerCase().email().max(255),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(128),
+  role: roleEnum,
+  status: statusEnum.optional(),
+});
 
 export const updateUserSchema = z
   .object({

@@ -1,6 +1,6 @@
 /** In-memory session store (access token never touches localStorage). */
 
-export type UserRole = 'SUPER_ADMIN' | 'EXAM_ADMIN' | 'STUDENT';
+export type UserRole = 'SUPER_ADMIN' | 'EXAM_ADMIN';
 
 export interface AuthUser {
   id: string;

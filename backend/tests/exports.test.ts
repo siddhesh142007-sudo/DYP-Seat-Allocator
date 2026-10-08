@@ -17,7 +17,6 @@ let superAdmin: TestUser;
 let superToken: string;
 let examAdmin: TestUser;
 let examAdminToken: string;
-let studentToken: string;
 const suffix = randomUUID().slice(0, 8);
 const auth = (t: string) => ({ Authorization: `Bearer ${t}` });
 
@@ -173,13 +172,6 @@ beforeAll(async () => {
   }
   allRolls = [...deptARolls, ...deptBRolls];
 
-  const studentUser = await createTestUser(pool, {
-    role: 'STUDENT',
-    password: PW,
-    studentId: studentIds[0]!,
-    email: `st-exp-${suffix}@test.local`,
-  });
-  studentToken = await login(studentUser.email);
 
   pubExamId = await mkExam(`Export Exam ${suffix}`);
   pubSubject = `Export Exam ${suffix}`;
@@ -201,14 +193,11 @@ afterAll(async () => {
 });
 
 describe('Phase 10: exports — access control', () => {
-  it('rejects anonymous callers with 401 and students with 403', async () => {
+  it('rejects anonymous callers with 401', async () => {
     for (const path of ['classroom', 'plan', 'slips']) {
       const anon = await request(app).get(`/api/v1/exports/exams/${pubExamId}/${path}`);
       expect(anon.status, path).toBe(401);
-
-      const student = await request(app).get(`/api/v1/exports/exams/${pubExamId}/${path}`).set(auth(studentToken));
-      expect(student.status, path).toBe(403);
-      expect(student.body.error.code).toBe('FORBIDDEN');
+      expect(anon.body.error.code).toBe('UNAUTHORIZED');
     }
   });
 

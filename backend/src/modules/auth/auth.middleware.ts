@@ -53,25 +53,3 @@ export const requireRole =
     next();
   };
 
-/**
- * Resource-level check: a STUDENT may only touch the resource identified by
- * `param` when it belongs to them; admins pass. Mount after `authenticate`.
- */
-export const requireSelfOrAdmin =
-  (param = 'studentId'): RequestHandler =>
-  (req, _res, next) => {
-    if (!req.auth) {
-      next(new UnauthorizedError('Authentication required'));
-      return;
-    }
-    if (req.auth.role === 'SUPER_ADMIN' || req.auth.role === 'EXAM_ADMIN') {
-      next();
-      return;
-    }
-    const target = req.params[param];
-    if (req.auth.studentId && target && target === req.auth.studentId) {
-      next();
-      return;
-    }
-    next(new ForbiddenError('You can only access your own records'));
-  };

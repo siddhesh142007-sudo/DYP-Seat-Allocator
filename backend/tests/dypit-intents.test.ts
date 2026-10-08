@@ -13,7 +13,6 @@ let pool: pg.Pool;
 let app: ReturnType<typeof createApp>;
 let adminToken: string;
 let superToken: string;
-let studentToken: string;
 let yearId: string;
 let aidsDept: string;
 let ceDept: string;
@@ -68,12 +67,9 @@ beforeAll(async () => {
 
   const superAdmin = await createTestUser(pool, { role: 'SUPER_ADMIN', password: PW });
   const examAdmin = await createTestUser(pool, { role: 'EXAM_ADMIN', password: PW });
-  const student = await createTestUser(pool, { role: 'STUDENT', password: PW });
   superToken = (await request(app).post('/api/v1/auth/login').send({ identifier: superAdmin.email, password: PW })).body
     .accessToken;
   adminToken = (await request(app).post('/api/v1/auth/login').send({ identifier: examAdmin.email, password: PW })).body
-    .accessToken;
-  studentToken = (await request(app).post('/api/v1/auth/login').send({ identifier: student.email, password: PW })).body
     .accessToken;
 
   yearId = randomUUID();
@@ -126,9 +122,9 @@ describe('GET /dypit/cohorts', () => {
     expect(aids).toMatchObject({ count: 45, minSerial: 1, maxSerial: 45 });
   });
 
-  it('requires admin (401 anon, 403 student)', async () => {
+  it('requires authentication (401 anonymous)', async () => {
     expect((await request(app).get('/api/v1/dypit/cohorts')).status).toBe(401);
-    expect((await request(app).get('/api/v1/dypit/cohorts').set(auth(studentToken))).status).toBe(403);
+    expect((await request(app).get('/api/v1/dypit/cohorts')).status).toBe(401);
   });
 });
 
@@ -329,11 +325,7 @@ describe('POST /dypit/exams/:examId/intents', () => {
     expect(res.body.intent.division).toBe('C');
   });
 
-  it('403s a student and 401s an anonymous caller', async () => {
-    expect(
-      (await request(app).post(`/api/v1/dypit/exams/${examId}/intents`).set(auth(studentToken)).send(baseIntent()))
-        .status,
-    ).toBe(403);
+  it('401s an anonymous caller', async () => {
     expect((await request(app).post(`/api/v1/dypit/exams/${examId}/intents`).send(baseIntent())).status).toBe(401);
   });
 

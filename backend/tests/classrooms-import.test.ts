@@ -14,7 +14,6 @@ const HEADERS = 'room_number,building,floor,bench_count';
 let pool: pg.Pool;
 let app: ReturnType<typeof createApp>;
 let superToken: string;
-let studentToken: string;
 const suffix = randomUUID().slice(0, 8);
 const auth = (t: string) => ({ Authorization: `Bearer ${t}` });
 
@@ -39,12 +38,8 @@ beforeAll(async () => {
   await truncateAll(pool);
   app = createApp();
   const admin = await createTestUser(pool, { role: 'SUPER_ADMIN', password: PW, email: `sa-roomimp-${suffix}@test.local` });
-  const student = await createTestUser(pool, { role: 'STUDENT', password: PW, email: `st-roomimp-${suffix}@test.local` });
   superToken = (
     await request(app).post('/api/v1/auth/login').send({ identifier: admin.email, password: PW })
-  ).body.accessToken as string;
-  studentToken = (
-    await request(app).post('/api/v1/auth/login').send({ identifier: student.email, password: PW })
   ).body.accessToken as string;
 });
 
@@ -54,10 +49,8 @@ afterAll(async () => {
 });
 
 describe('Phase 10: classroom import — access + template', () => {
-  it('401 for anonymous, 403 for students', async () => {
+  it('rejects anonymous requests with 401', async () => {
     expect((await request(app).post('/api/v1/classrooms/import')).status).toBe(401);
-    const student = await upload(csv([row(`NOPE-${suffix}`)]), 'rooms.csv', true, studentToken);
-    expect(student.status).toBe(403);
   });
 
   it('serves a CSV template with the documented headers', async () => {

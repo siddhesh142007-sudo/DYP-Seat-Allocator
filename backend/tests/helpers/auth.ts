@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import type pg from 'pg';
 
 export interface TestUserSpec {
-  role: 'SUPER_ADMIN' | 'EXAM_ADMIN' | 'STUDENT';
+  role: 'SUPER_ADMIN' | 'EXAM_ADMIN';
   password: string;
   name?: string;
   /** null = no email; undefined = generated unique test email */

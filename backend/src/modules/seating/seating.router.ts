@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { authenticate, requireRole, requireSelfOrAdmin } from '../auth/auth.middleware.js';
+import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import { asyncHandler } from '../../common/asyncHandler.js';
 import * as service from './seating.service.js';
 import { generateSeatingSchema, regenerateSeatingSchema, unpublishSchema } from './seating.schemas.js';
@@ -91,7 +91,6 @@ seatingRouter.post(
 
 seatingRouter.get(
   '/students/:id/seating-history',
-  requireSelfOrAdmin('id'),
   asyncHandler(async (req: Request, res: Response) => {
     res.json(await service.studentSeatingHistory(parseId(req.params.id)));
   }),

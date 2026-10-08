@@ -12,8 +12,6 @@ export const createStudentSchema = z.object({
   status: statusEnum.optional(),
   academicYearId: z.string().uuid(),
   departmentId: z.string().uuid(),
-  /** Also create a STUDENT login user; it must rotate the password on first login. */
-  createLogin: z.boolean().optional().default(false),
   /** Password for the created login; defaults to the Welcome@<ROLL> policy. */
   password: z.string().min(8).max(128).optional(),
 });
@@ -27,8 +25,7 @@ export const updateStudentSchema = z
     academicYearId: z.string().uuid().optional(),
     departmentId: z.string().uuid().optional(),
     /** Add a login to an existing student that has none. */
-    createLogin: z.boolean().optional(),
-    password: z.string().min(8).max(128).optional(),
+      password: z.string().min(8).max(128).optional(),
   })
   .refine((data) => Object.keys(data).length > 0, { message: 'At least one field to update is required' });
 

@@ -1,13 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
-import express from 'express';
 import type pg from 'pg';
 import { createTestPool, truncateAll } from './helpers/db.js';
 import { createTestUser, createTestStudent, type TestUser } from './helpers/auth.js';
 import { createApp } from '../src/app.js';
 import { prisma, disconnectPrisma } from '../src/db/prisma.js';
-import { authenticate, requireSelfOrAdmin } from '../src/modules/auth/auth.middleware.js';
-import { errorHandler } from '../src/common/middleware/errorHandler.js';
 
 const PW = {
   super: 'SuperSecret123!',
@@ -20,9 +17,7 @@ let pool: pg.Pool;
 let app: ReturnType<typeof createApp>;
 let superAdmin: TestUser;
 let examAdmin: TestUser;
-let studentA: TestUser;
 let studentARow: { id: string; rollNumber: string };
-let studentBRow: { id: string; rollNumber: string };
 
 beforeAll(async () => {
   pool = createTestPool(5);
@@ -32,8 +27,6 @@ beforeAll(async () => {
   superAdmin = await createTestUser(pool, { role: 'SUPER_ADMIN', password: PW.super, email: 'sa@test.local' });
   examAdmin = await createTestUser(pool, { role: 'EXAM_ADMIN', password: PW.exam, email: 'ea@test.local' });
   studentARow = await createTestStudent(pool, { rollPrefix: 'AU' });
-  studentA = await createTestUser(pool, { role: 'STUDENT', password: PW.student, studentId: studentARow.id });
-  studentBRow = await createTestStudent(pool, { rollPrefix: 'BU' });
 }, 60000);
 
 afterAll(async () => {
@@ -81,10 +74,10 @@ describe('POST /auth/login', () => {
     expect(first).toContain('Path=/api/v1/auth');
   });
 
-  it('logs in a student with their roll number', async () => {
+  it('refuses a roll number as a login identifier (admin-only system)', async () => {
     const res = await login(studentARow.rollNumber, PW.student);
-    expect(res.status).toBe(200);
-    expect(res.body.user).toMatchObject({ role: 'STUDENT', studentId: studentARow.id });
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHORIZED');
   });
 
   it('rejects a wrong password with a generic message', async () => {
@@ -148,11 +141,12 @@ describe('protected routes', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 403 when a student calls an admin route', async () => {
-    const token = await accessTokenFor(studentARow.rollNumber, PW.student);
-    const res = await request(app).get('/api/v1/users').set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe('FORBIDDEN');
+  it('rejects a tampered access token with 401', async () => {
+    const token = await accessTokenFor(superAdmin.email!, PW.super);
+    const res = await request(app)
+      .get('/api/v1/users')
+      .set('Authorization', `Bearer ${token.slice(0, -3)}xyz`);
+    expect(res.status).toBe(401);
   });
 
   it('returns 403 when an EXAM_ADMIN calls a SUPER_ADMIN-only route', async () => {
@@ -319,12 +313,12 @@ describe('users management (SUPER_ADMIN only)', () => {
     expect(duplicate.status).toBe(409);
     expect(duplicate.body.error.code).toBe('CONFLICT');
 
-    const studentWithoutLink = await request(app)
+    const retiredRole = await request(app)
       .post('/api/v1/users')
       .set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Orphan Student', password: 'BrandNew123!', role: 'STUDENT' });
-    expect(studentWithoutLink.status).toBe(400);
-    expect(studentWithoutLink.body.error.code).toBe('VALIDATION_ERROR');
+      .send({ name: 'Student Account', email: 'st@test.local', password: 'BrandNew123!', role: 'STUDENT' });
+    expect(retiredRole.status).toBe(400);
+    expect(retiredRole.body.error.code).toBe('VALIDATION_ERROR');
 
     const updated = await request(app)
       .put(`/api/v1/users/${newId}`)
@@ -368,41 +362,9 @@ describe('users management (SUPER_ADMIN only)', () => {
     expect(res.body.items[0]).toHaveProperty('action');
     expect(res.body.items[0]).toHaveProperty('createdAt');
 
-    const studentToken = await accessTokenFor(studentARow.rollNumber, PW.student);
-    const forbidden = await request(app).get('/api/v1/audit-logs').set('Authorization', `Bearer ${studentToken}`);
+    const examAdminToken = await accessTokenFor(examAdmin.email!, PW.exam);
+    const forbidden = await request(app).get('/api/v1/audit-logs').set('Authorization', `Bearer ${examAdminToken}`);
     expect(forbidden.status).toBe(403);
   });
 });
 
-describe('requireSelfOrAdmin (resource-level student check)', () => {
-  let mini: express.Express;
-
-  beforeAll(() => {
-    mini = express();
-    mini.get('/students/:studentId', authenticate, requireSelfOrAdmin('studentId'), (req, res) => {
-      res.json({ userId: req.auth?.userId });
-    });
-    mini.use(errorHandler);
-  });
-
-  it('lets a student access their own resource', async () => {
-    const token = await accessTokenFor(studentARow.rollNumber, PW.student);
-    const res = await request(mini).get(`/students/${studentARow.id}`).set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(200);
-    expect(res.body.userId).toBe(studentA.id);
-  });
-
-  it('blocks a student from another student’s resource', async () => {
-    const token = await accessTokenFor(studentARow.rollNumber, PW.student);
-    const res = await request(mini).get(`/students/${studentBRow.id}`).set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe('FORBIDDEN');
-  });
-
-  it('lets an admin access any student resource', async () => {
-    const token = await accessTokenFor(superAdmin.email!, PW.super);
-    const res = await request(mini).get(`/students/${studentBRow.id}`).set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(200);
-    expect(res.body.userId).toBe(superAdmin.id);
-  });
-});

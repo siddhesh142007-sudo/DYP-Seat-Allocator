@@ -12,7 +12,6 @@ const PW = 'DypitGen123!';
 let pool: pg.Pool;
 let app: ReturnType<typeof createApp>;
 let adminToken: string;
-let studentToken: string;
 let yearId: string;
 let deptId: string;
 let examId: string;
@@ -85,10 +84,7 @@ beforeAll(async () => {
   app = createApp();
 
   const admin = await createTestUser(pool, { role: 'EXAM_ADMIN', password: PW });
-  const student = await createTestUser(pool, { role: 'STUDENT', password: PW });
   adminToken = (await request(app).post('/api/v1/auth/login').send({ identifier: admin.email, password: PW })).body
-    .accessToken;
-  studentToken = (await request(app).post('/api/v1/auth/login').send({ identifier: student.email, password: PW })).body
     .accessToken;
 
   yearId = randomUUID();
@@ -291,11 +287,7 @@ describe('generateFromIntents', () => {
     expect(audit).not.toBeNull();
   });
 
-  it('403s a student and 401s an anonymous caller', async () => {
-    expect(
-      (await request(app).post(`/api/v1/dypit/exams/${examId}/generate-from-intents`).set(auth(studentToken)).send({}))
-        .status,
-    ).toBe(403);
+  it('401s an anonymous caller', async () => {
     expect((await request(app).post(`/api/v1/dypit/exams/${examId}/generate-from-intents`).send({})).status).toBe(401);
   });
 

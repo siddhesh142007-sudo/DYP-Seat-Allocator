@@ -135,7 +135,7 @@ describe('LoginPage', () => {
     });
   });
 
-  it('redirects a student to /portal after login', async () => {
+  it('redirects an exam admin to the dashboard after login', async () => {
     fetchMock.mockImplementation((url: RequestInfo | URL) => {
       if (String(url).includes('/auth/refresh')) {
         return Promise.resolve(jsonResponse(401, errorBody('no session')));
@@ -147,11 +147,11 @@ describe('LoginPage', () => {
             expiresIn: 900,
             user: {
               id: 'u2',
-              name: 'Student One',
-              email: null,
-              role: 'STUDENT',
+              name: 'Exam Admin',
+              email: 'ea@test.local',
+              role: 'EXAM_ADMIN',
               status: 'ACTIVE',
-              studentId: 's1',
+              studentId: null,
             },
           }),
         );
@@ -161,8 +161,8 @@ describe('LoginPage', () => {
 
     renderLogin();
     await screen.findByLabelText('Email or roll number');
-    fillAndSubmit('R12345', 'student-password');
+    fillAndSubmit('ea@test.local', 'admin-password');
 
-    await screen.findByText('student-home');
+    await screen.findByText('admin-home');
   });
 });

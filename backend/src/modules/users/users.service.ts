@@ -43,17 +43,8 @@ export async function listUsers(query: ListUsersQuery) {
 }
 
 export async function createUser(input: CreateUserInput, actorId: string, ip: string | null) {
-  if (input.email) {
-    const existing = await prisma.user.findFirst({ where: { email: { equals: input.email, mode: 'insensitive' } } });
-    if (existing) throw new ConflictError('A user with this email already exists');
-  }
-
-  if (input.studentId) {
-    const student = await prisma.student.findUnique({ where: { id: input.studentId } });
-    if (!student) throw new NotFoundError('Student not found');
-    const linked = await prisma.user.findUnique({ where: { studentId: input.studentId } });
-    if (linked) throw new ConflictError('This student already has a login user');
-  }
+  const existing = await prisma.user.findFirst({ where: { email: { equals: input.email, mode: 'insensitive' } } });
+  if (existing) throw new ConflictError('A user with this email already exists');
 
   let user;
   try {
@@ -64,9 +55,7 @@ export async function createUser(input: CreateUserInput, actorId: string, ip: st
         role: input.role,
         status: input.status ?? 'ACTIVE',
         passwordHash: await hashPassword(input.password),
-        studentId: input.studentId,
       },
-      include: STUDENT_INCLUDE,
     });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -83,7 +72,7 @@ export async function createUser(input: CreateUserInput, actorId: string, ip: st
     metadata: { email: user.email, role: user.role },
     ip,
   });
-  return { ...publicUser(user), student: user.student };
+  return publicUser(user);
 }
 
 export async function updateUser(id: string, patch: UpdateUserInput, actorId: string, ip: string | null) {

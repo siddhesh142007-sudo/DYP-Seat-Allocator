@@ -22,13 +22,13 @@ const admin: AuthUser = {
   mustChangePassword: false,
 };
 
-const student: AuthUser = {
-  id: 'student-1',
-  name: 'Student User',
-  email: null,
-  role: 'STUDENT',
+const examAdmin: AuthUser = {
+  id: 'exam-admin-1',
+  name: 'Exam Admin User',
+  email: 'ea@test.local',
+  role: 'EXAM_ADMIN',
   status: 'ACTIVE',
-  studentId: 's-1',
+  studentId: null,
   mustChangePassword: false,
 };
 
@@ -47,10 +47,10 @@ function renderAt(path: string) {
           />
           <Route path="/admin/dashboard" element={<div>admin-home</div>} />
           <Route
-            path="/portal"
+            path="/super"
             element={
-              <RequireAuth roles={['STUDENT']}>
-                <div>portal-secure</div>
+              <RequireAuth roles={['SUPER_ADMIN']}>
+                <div>super-secure</div>
               </RequireAuth>
             }
           />
@@ -58,7 +58,7 @@ function renderAt(path: string) {
           <Route
             path="/change-password"
             element={
-              <RequireAuth roles={['SUPER_ADMIN', 'EXAM_ADMIN', 'STUDENT']}>
+              <RequireAuth roles={['SUPER_ADMIN', 'EXAM_ADMIN']}>
                 <div>change-password-page</div>
               </RequireAuth>
             }
@@ -94,24 +94,17 @@ describe('RequireAuth', () => {
     expect(screen.queryByText('admin-secure')).toBeNull();
   });
 
-  it('sends a student to their portal when they stray into /admin', async () => {
-    setSession({ user: student, accessToken: 't', expiresAt: Date.now() + 600_000 });
-    renderAt('/admin');
-    await screen.findByText('portal-secure');
-    expect(screen.queryByText('admin-secure')).toBeNull();
-  });
-
-  it('sends an admin to /admin/dashboard when they stray into /portal', async () => {
-    setSession({ user: admin, accessToken: 't', expiresAt: Date.now() + 600_000 });
-    renderAt('/portal');
+  it('sends an EXAM_ADMIN to their own home from a SUPER_ADMIN-only route', async () => {
+    setSession({ user: examAdmin, accessToken: 't', expiresAt: Date.now() + 600_000 });
+    renderAt('/super');
     await screen.findByText('admin-home');
-    expect(screen.queryByText('portal-secure')).toBeNull();
+    expect(screen.queryByText('super-secure')).toBeNull();
   });
 
-  it('redirects a logged-out visitor away from /portal', async () => {
-    renderAt('/portal');
-    await screen.findByText('login-page');
-    expect(screen.queryByText('portal-secure')).toBeNull();
+  it('lets a SUPER_ADMIN into a SUPER_ADMIN-only route', async () => {
+    setSession({ user: admin, accessToken: 't', expiresAt: Date.now() + 600_000 });
+    renderAt('/super');
+    await screen.findByText('super-secure');
   });
 
   it('forces a must-change-password user to /change-password', async () => {

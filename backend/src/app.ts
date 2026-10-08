@@ -16,7 +16,6 @@ import { classroomsRouter } from './modules/classrooms/classrooms.router.js';
 import { examsRouter } from './modules/exams/exams.router.js';
 import { seatingRouter } from './modules/seating/seating.router.js';
 import { dashboardRouter } from './modules/dashboard/dashboard.router.js';
-import { meRouter } from './modules/me/me.router.js';
 import { exportsRouter } from './modules/exports/exports.router.js';
 import { dypitRouter } from './modules/dypit/dypit.router.js';
 
@@ -66,7 +65,6 @@ export function createApp(): Express {
   app.use('/api/v1/exams', examsRouter);
   app.use('/api/v1/seating', seatingRouter);
   app.use('/api/v1/dashboard', dashboardRouter);
-  app.use('/api/v1/me', meRouter);
   app.use('/api/v1/exports', exportsRouter);
   // DYPIT range-based allocation builder (administrator only).
   app.use('/api/v1/dypit', dypitRouter);

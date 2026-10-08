@@ -3,7 +3,7 @@ import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { createTestPool, truncateAll } from './helpers/db.js';
-import { createTestUser, createTestStudent } from './helpers/auth.js';
+import { createTestUser } from './helpers/auth.js';
 import { insertAllocation, createFixture, type Fixture } from './helpers/fixtures.js';
 import { createApp } from '../src/app.js';
 import { prisma, disconnectPrisma } from '../src/db/prisma.js';
@@ -13,7 +13,6 @@ const PW = 'AdminSecret123!';
 let pool: pg.Pool;
 let app: ReturnType<typeof createApp>;
 let superToken: string;
-let studentToken: string;
 let fixture: Fixture;
 
 beforeAll(async () => {
@@ -21,12 +20,8 @@ beforeAll(async () => {
   await truncateAll(pool);
   app = createApp();
   const superAdmin = await createTestUser(pool, { role: 'SUPER_ADMIN', password: PW, email: 'sa-room@test.local' });
-  const studentRow = await createTestStudent(pool, { rollPrefix: 'CR' });
-  const studentUser = await createTestUser(pool, { role: 'STUDENT', password: PW, studentId: studentRow.id });
   superToken = (await request(app).post('/api/v1/auth/login').send({ identifier: superAdmin.email, password: PW })).body
     .accessToken;
-  studentToken = (await request(app).post('/api/v1/auth/login').send({ identifier: studentUser.email, password: PW }))
-    .body.accessToken;
   fixture = await createFixture(pool);
 }, 60000);
 
@@ -47,9 +42,10 @@ async function createRoom(): Promise<string> {
 }
 
 describe('classroom CRUD', () => {
-  it('rejects STUDENT role with 403 and anonymous with 401', async () => {
-    expect((await request(app).get('/api/v1/classrooms').set(auth(studentToken))).status).toBe(403);
-    expect((await request(app).get('/api/v1/classrooms')).status).toBe(401);
+  it('rejects anonymous requests with 401', async () => {
+    const res = await request(app).get('/api/v1/classrooms');
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHORIZED');
   });
 
   it('creates, duplicates (409) and updates a room', async () => {
