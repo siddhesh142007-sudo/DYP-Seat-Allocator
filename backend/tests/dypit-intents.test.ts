@@ -111,6 +111,37 @@ const baseIntent = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+describe('student year code is derived from the roll number', () => {
+  it('sets yearCode on create and on CSV import', async () => {
+    const roll = 'SE-CE-D_07';
+    const created = await pool.query(
+      `INSERT INTO students (id, roll_number, name, division, year_code, status, academic_year_id, department_id)
+       VALUES ($1, $2, 'Roll Year', 'D', 'SE', 'ACTIVE', $3, $4)`,
+      [randomUUID(), roll, yearId, ceDept],
+    );
+    expect(created.rowCount).toBe(1);
+
+    // The API create path derives yearCode from the roll number.
+    const res = await request(app)
+      .post('/api/v1/students')
+      .set(auth(adminToken))
+      .send({ rollNumber: 'TE-CE-D_11', name: 'API Year', division: 'D', academicYearId: yearId, departmentId: ceDept });
+    expect(res.status).toBe(201);
+    const stored = await prisma.student.findUniqueOrThrow({ where: { rollNumber: 'TE-CE-D_11' } });
+    expect(stored.yearCode).toBe('TE');
+  });
+
+  it('leaves yearCode null for a roll number that is not DYPIT-shaped', async () => {
+    const res = await request(app)
+      .post('/api/v1/students')
+      .set(auth(adminToken))
+      .send({ rollNumber: '24LEGACY99', name: 'Legacy', division: 'A', academicYearId: yearId, departmentId: ceDept });
+    expect(res.status).toBe(201);
+    const stored = await prisma.student.findUniqueOrThrow({ where: { rollNumber: '24LEGACY99' } });
+    expect(stored.yearCode).toBeNull();
+  });
+});
+
 describe('GET /dypit/cohorts', () => {
   it('lists distinct cohorts with their serial bounds', async () => {
     const res = await request(app).get('/api/v1/dypit/cohorts').set(auth(adminToken));

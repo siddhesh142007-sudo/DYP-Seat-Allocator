@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma.js';
 import { ConflictError, NotFoundError } from '../../common/errors.js';
 import { auditLog } from '../audit/audit.service.js';
+import { parseRoll } from '../dypit/roll.js';
 import type { CreateStudentInput, ListStudentsQuery, UpdateStudentInput } from './students.schemas.js';
 
 const STUDENT_INCLUDE = {
@@ -61,6 +62,8 @@ export async function createStudent(input: CreateStudentInput, actorId: string, 
       const created = await tx.student.create({
         data: {
           rollNumber: input.rollNumber,
+          // Derived from a DYPIT roll number (SE-…, TE-…); null for other formats.
+          yearCode: parseRoll(input.rollNumber)?.yearCode ?? null,
           name: input.name,
           email: input.email ?? null,
           division: input.division ?? null,

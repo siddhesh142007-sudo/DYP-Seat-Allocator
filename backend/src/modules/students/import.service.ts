@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import { prisma } from '../../db/prisma.js';
 import { ConflictError, UnprocessableError, ValidationError } from '../../common/errors.js';
 import { auditLog } from '../audit/audit.service.js';
+import { parseRoll } from '../dypit/roll.js';
 
 export const IMPORT_HEADERS = [
   'roll_number',
@@ -316,6 +317,9 @@ export async function importStudents(
               rollNumber: item.normalized.rollNumber,
               name: item.normalized.name,
               email: item.normalized.email,
+              // A DYPIT roll number carries the year of study; without it the
+              // student cannot be found by an allocation intent's roll range.
+              yearCode: parseRoll(item.normalized.rollNumber)?.yearCode ?? null,
               division: item.normalized.division,
               status: item.normalized.status ?? 'ACTIVE',
               departmentId: deptByLookup.get(item.normalized.departmentCode.toLowerCase())!,
@@ -335,6 +339,7 @@ export async function importStudents(
             data: {
               name: item.normalized.name,
               email: item.normalized.email,
+              yearCode: parseRoll(item.normalized.rollNumber)?.yearCode ?? null,
               division: item.normalized.division,
               departmentId: deptByLookup.get(item.normalized.departmentCode.toLowerCase())!,
               academicYearId: yearByLookup.get(item.normalized.academicYear.toLowerCase())!,
