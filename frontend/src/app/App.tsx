@@ -18,6 +18,7 @@ import { SeatingPage } from '../pages/admin/SeatingPage';
 import { ExamSeatingPage } from '../pages/admin/ExamSeatingPage';
 import { SeatingVisualizePage } from '../pages/admin/SeatingVisualizePage';
 import { SeatingComparePage } from '../pages/admin/SeatingComparePage';
+import { AllocationBuilderPage } from '../pages/admin/AllocationBuilderPage';
 
 const ALL_ROLES = ['SUPER_ADMIN', 'EXAM_ADMIN'] as const;
 
@@ -58,6 +59,7 @@ export function App() {
               <Route path="seating/compare" element={<SeatingComparePage />} />
               <Route path="exams/:examId/seating" element={<ExamSeatingPage />} />
               <Route path="exams/:examId/seating/visualize" element={<SeatingVisualizePage />} />
+              <Route path="exams/:examId/seating/builder" element={<AllocationBuilderPage />} />
             </Route>
 
             <Route path="*" element={<NotFoundPage />} />

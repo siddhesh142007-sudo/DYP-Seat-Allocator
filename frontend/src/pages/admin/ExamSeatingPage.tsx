@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Send,
   Undo2,
+  Wand2,
   XCircle,
 } from 'lucide-react';
 import { api, ApiError } from '../../api/client';
@@ -427,6 +428,12 @@ export function ExamSeatingPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Link to={`/admin/exams/${examId}/seating/builder`}>
+            <Button variant="secondary" size="sm">
+              <Wand2 className="h-4 w-4" aria-hidden="true" />
+              <span className="ml-1">Allocation builder</span>
+            </Button>
+          </Link>
           <Select
             aria-label="Switch exam"
             value={examId}
