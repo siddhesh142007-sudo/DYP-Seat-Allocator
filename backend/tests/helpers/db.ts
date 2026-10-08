@@ -17,10 +17,12 @@ export function createTestPool(max = 5): pg.Pool {
 export async function truncateAll(pool: pg.Pool): Promise<void> {
   await pool.query(`
     TRUNCATE TABLE
+      allocation_intents,
       seating_allocations,
       seating_runs,
       exam_registrations,
       exams,
+      subjects,
       seats,
       classrooms,
       students,

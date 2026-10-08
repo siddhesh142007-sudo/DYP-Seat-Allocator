@@ -89,23 +89,45 @@ enum RunStatus {
   @@map("run_status")
 }
 
+/// Year of study, encoded as the first segment of a DYPIT roll number
+/// (e.g. "SE-AIDS-C_07" -> SE). Promoted students change code, so a roll
+/// number is unique across the college without an admission-year field.
+enum YearCode {
+  FE
+  SE
+  TE
+  BE
+
+  @@map("year_code")
+}
+
+/// Subject category. Groups are the FE Physics/Chemistry swap: Group A
+/// divisions take the Group A theory papers and vice versa.
+enum SubjectType {
+  THEORY
+  LABORATORY
+  ELECTIVE
+
+  @@map("subject_type")
+}
+
 // ---------------------------------------------------------------------------
 // Identity & master data
 // ---------------------------------------------------------------------------
 
 model User {
-  id           String       @id @default(uuid()) @db.Uuid
-  email        String?      @unique @db.VarChar(255)
-  name         String       @db.VarChar(255)
-  role         UserRole     @default(STUDENT)
-  passwordHash String       @map("password_hash") @db.VarChar(255)
-  status       EntityStatus @default(ACTIVE)
+  id                 String       @id @default(uuid()) @db.Uuid
+  email              String?      @unique @db.VarChar(255)
+  name               String       @db.VarChar(255)
+  role               UserRole     @default(STUDENT)
+  passwordHash       String       @map("password_hash") @db.VarChar(255)
+  status             EntityStatus @default(ACTIVE)
   // Bumped on logout / password change to revoke every issued refresh token.
-  tokenVersion Int          @default(0) @map("token_version")
+  tokenVersion       Int          @default(0) @map("token_version")
   // True when the account was created with a default password (or admin-reset) and must rotate it on first login.
-  mustChangePassword Boolean @default(false) @map("must_change_password")
-  studentId    String?      @unique @map("student_id") @db.Uuid
-  student      Student?     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  mustChangePassword Boolean      @default(false) @map("must_change_password")
+  studentId          String?      @unique @map("student_id") @db.Uuid
+  student            Student?     @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   auditLogs      AuditLog[]
   runsGenerated  SeatingRun[] @relation("RunGeneratedBy")
@@ -137,12 +159,16 @@ model AcademicYear {
 }
 
 model Department {
-  id     String       @id @default(uuid()) @db.Uuid
-  name   String       @db.VarChar(150)
-  code   String       @unique @db.VarChar(50)
-  status EntityStatus @default(ACTIVE)
+  id               String       @id @default(uuid()) @db.Uuid
+  name             String       @db.VarChar(150)
+  code             String       @unique @db.VarChar(50)
+  status           EntityStatus @default(ACTIVE)
+  /// AICTE/DTE sanctioned annual intake (DYPIT 2025-26). Informational: it is
+  /// the ceiling for cohort size, not the live student count.
+  sanctionedIntake Int?         @map("sanctioned_intake")
 
   students    Student[]
+  subjects    Subject[]
   allocations SeatingAllocation[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -157,7 +183,11 @@ model Student {
   rollNumber     String        @unique @map("roll_number") @db.VarChar(50)
   name           String        @db.VarChar(255)
   email          String?       @db.VarChar(255)
+  /// Division letter(s), uppercase A-Z (validated at the Zod layer).
   division       String?       @db.VarChar(50)
+  /// Year of study parsed from the roll number prefix; null for rolls that
+  /// do not follow the DYPIT "<YearCode>-<BRANCH>-<DIV>_<NNN>" shape.
+  yearCode       YearCode?     @map("year_code")
   status         StudentStatus @default(ACTIVE)
   academicYearId String        @map("academic_year_id") @db.Uuid
   departmentId   String        @map("department_id") @db.Uuid
@@ -174,7 +204,33 @@ model Student {
   @@index([academicYearId, departmentId, status])
   @@index([departmentId])
   @@index([status])
+  @@index([yearCode, division])
   @@map("students")
+}
+
+/// DYPIT curriculum master data, seeded from the SPPU Engineering Curriculum
+/// Handbook and the FE Subject Directory. Informational: seating is driven by
+/// the exam + AllocationIntent, not by this table.
+model Subject {
+  id           String      @id @default(uuid()) @db.Uuid
+  name         String      @db.VarChar(255)
+  code         String?     @db.VarChar(50)
+  departmentId String      @map("department_id") @db.Uuid
+  yearCode     YearCode    @map("year_code")
+  semester     Int
+  type         SubjectType @default(THEORY)
+  /// FE Physics/Chemistry swap group (A or B). Null outside FE Sem I/II.
+  group        String?     @db.VarChar(1)
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([departmentId, name, yearCode, semester])
+  @@index([yearCode, semester])
+  @@index([departmentId])
+  @@map("subjects")
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +248,7 @@ model Classroom {
 
   seats       Seat[]
   allocations SeatingAllocation[]
+  intents     AllocationIntent[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -240,6 +297,7 @@ model Exam {
   registrations ExamRegistration[]
   runs          SeatingRun[]
   allocations   SeatingAllocation[]
+  intents       AllocationIntent[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -248,6 +306,48 @@ model Exam {
   @@index([academicYearId])
   @@index([examDate])
   @@map("exams")
+}
+
+/// An administrator's declaration of intent: "students with roll numbers
+/// <YearCode>-<BRANCH>-<DIVISION> serial <fromSerial>..<toSerial> sit in
+/// <classroomId>". Generation executes intents instead of searching the whole
+/// room pool.
+///
+/// The range is stored as parsed components (never raw roll strings) because
+/// lexicographic comparison breaks once a serial exceeds 99
+/// ("...-C_99" > "...-C_100" as text).
+model AllocationIntent {
+  id          String   @id @default(uuid()) @db.Uuid
+  examId      String   @map("exam_id") @db.Uuid
+  classroomId String   @map("classroom_id") @db.Uuid
+  yearCode    YearCode @map("year_code")
+  branchCode  String   @map("branch_code") @db.VarChar(50)
+  division    String   @db.VarChar(50)
+  fromSerial  Int      @map("from_serial")
+  toSerial    Int      @map("to_serial")
+
+  /// Optional bench-grid layout for the room. Both null => fill the room's
+  /// benches in bench order. Exactly both or neither is enforced in raw SQL.
+  rowCount   Int? @map("row_count")
+  colCount   Int? @map("col_count")
+  /// One-based first bench to use, so an admin can seat several blocks in one
+  /// room across separate intents without reusing benches.
+  seatOffset Int  @default(1) @map("seat_offset")
+
+  /// When true this block is seated in strict roll order instead of shuffled
+  /// (same block in a later paper still avoids repeating the previous seats).
+  strictRollOrder Boolean @default(false) @map("strict_roll_order")
+
+  exam      Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([examId, yearCode, branchCode, division, fromSerial, toSerial])
+  @@index([examId])
+  @@index([classroomId])
+  @@map("allocation_intents")
 }
 
 model ExamRegistration {
