@@ -19,6 +19,7 @@
     "seed": "tsx src/scripts/seed.ts",
     "seed:demo": "tsx scripts/demo-seed.ts",
     "seed:demo-history": "tsx scripts/demo-history.ts",
+    "seed:dypit": "tsx scripts/seed-dypit.ts",
     "demo:algorithm": "tsx ../scripts/demo-algorithm.ts"
   },
   "dependencies": {
