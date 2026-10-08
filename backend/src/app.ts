@@ -18,6 +18,7 @@ import { seatingRouter } from './modules/seating/seating.router.js';
 import { dashboardRouter } from './modules/dashboard/dashboard.router.js';
 import { meRouter } from './modules/me/me.router.js';
 import { exportsRouter } from './modules/exports/exports.router.js';
+import { dypitRouter } from './modules/dypit/dypit.router.js';
 
 export function createApp(): Express {
   const app = express();
@@ -67,6 +68,8 @@ export function createApp(): Express {
   app.use('/api/v1/dashboard', dashboardRouter);
   app.use('/api/v1/me', meRouter);
   app.use('/api/v1/exports', exportsRouter);
+  // DYPIT range-based allocation builder (administrator only).
+  app.use('/api/v1/dypit', dypitRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
