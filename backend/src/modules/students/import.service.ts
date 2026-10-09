@@ -16,7 +16,7 @@ export const IMPORT_HEADERS = [
 ] as const;
 
 const MAX_ROWS = 2000;
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 export interface ImportRowReport {
   row: number;
@@ -74,7 +74,7 @@ function normalizeHeader(raw: unknown): string {
 /** Parses an uploaded .csv/.xlsx buffer into normalized row objects. */
 export async function parseImportFile(filename: string, buffer: Buffer): Promise<Record<string, string>[]> {
   if (buffer.byteLength > MAX_FILE_BYTES) {
-    throw new ValidationError('File is larger than the 5 MB limit');
+    throw new ValidationError('File is larger than the 4 MB limit');
   }
   const lower = filename.toLowerCase();
   if (lower.endsWith('.csv')) {

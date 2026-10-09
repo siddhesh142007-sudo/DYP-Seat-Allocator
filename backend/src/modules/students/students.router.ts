@@ -13,7 +13,7 @@ studentsRouter.use(authenticate, requireRole('SUPER_ADMIN', 'EXAM_ADMIN'));
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  limits: { fileSize: 4 * 1024 * 1024, files: 1 },
 });
 
 /** Maps multer errors (file too large, unexpected field…) to 400 responses. */
@@ -22,7 +22,7 @@ function handleUpload(req: import('express').Request, res: import('express').Res
     if (!err) return next();
     const message =
       err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE'
-        ? 'File is larger than the 5 MB limit'
+        ? 'File is larger than the 4 MB limit'
         : `Upload failed: ${err instanceof Error ? err.message : 'unknown error'}`;
     next(new ValidationError(message));
   });

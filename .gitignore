@@ -44,3 +44,12 @@ tests/e2e/playwright-report/
 
 # Prisma generated
 backend/prisma/*.db
+
+# Vercel
+.vercel
+
+# Local working copies of DYPIT source data. The canonical, tracked copies used
+# by backend/scripts/seed-dypit.ts live in backend/seed-data/ — keep these two
+# out of the repo.
+/DYPIT Pune SPPU Engineering Curriculum Handbook (1).csv
+/DYPIT Pune SPPU FE Subjects Directory.csv

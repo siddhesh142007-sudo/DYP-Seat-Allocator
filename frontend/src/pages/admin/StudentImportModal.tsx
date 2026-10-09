@@ -140,7 +140,7 @@ export function StudentImportModal({ open, onClose, onImported }: { open: boolea
             onChange={onFileChange}
             className="block w-full text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100"
           />
-          <p className="mt-2 text-xs text-ink-muted">Up to 2000 rows, 5 MB. Import is all-or-nothing.</p>
+          <p className="mt-2 text-xs text-ink-muted">Up to 2000 rows, 4 MB. Import is all-or-nothing.</p>
         </div>
 
         {error && (

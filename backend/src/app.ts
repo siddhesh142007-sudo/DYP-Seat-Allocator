@@ -19,6 +19,23 @@ import { dashboardRouter } from './modules/dashboard/dashboard.router.js';
 import { exportsRouter } from './modules/exports/exports.router.js';
 import { dypitRouter } from './modules/dypit/dypit.router.js';
 
+/**
+ * True when `origin` addresses the same host that served the request.
+ *
+ * Same-origin browser requests still send an Origin header, which a fixed
+ * allowlist cannot match: every Vercel preview deployment gets a unique
+ * hostname. Comparing hosts keeps those working without opening CORS to third
+ * parties — only a request served from the very same host passes.
+ */
+function isSameOrigin(origin: string, host: string | undefined): boolean {
+  if (!host) return false;
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
+
 export function createApp(): Express {
   const app = express();
 
@@ -26,14 +43,16 @@ export function createApp(): Express {
 
   app.use(helmet());
   app.use(
-    cors({
-      origin: (origin, cb) => {
-        // Allow same-origin / no-origin requests (curl, server-to-server) and
-        // explicitly configured origins only.
-        if (!origin || env.corsOrigins.includes(origin)) return cb(null, true);
-        cb(new Error('Not allowed by CORS'));
-      },
-      credentials: true,
+    cors((req, cb) => {
+      const origin = req.headers.origin;
+      // Allow same-origin / no-origin requests (curl, server-to-server),
+      // explicitly configured origins, and same-host preview deployments.
+      const allowed =
+        !origin ||
+        env.corsOrigins.includes(origin) ||
+        isSameOrigin(origin, req.headers.host);
+
+      cb(null, { origin: allowed ? (origin ?? true) : false, credentials: true });
     }),
   );
   app.use(express.json({ limit: '1mb' }));

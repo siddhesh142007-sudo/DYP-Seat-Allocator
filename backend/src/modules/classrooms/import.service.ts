@@ -9,7 +9,7 @@ export const IMPORT_HEADERS = ['room_number', 'building', 'floor', 'bench_count'
 
 const MAX_ROWS = 500;
 const MAX_BENCHES = 500;
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 export interface ClassroomImportRowReport {
   row: number;
@@ -76,7 +76,7 @@ function cellValueToString(value: ExcelJS.CellValue): string {
 /** Parses an uploaded .csv/.xlsx buffer into normalized row objects. */
 export async function parseClassroomFile(filename: string, buffer: Buffer): Promise<Record<string, string>[]> {
   if (buffer.byteLength > MAX_FILE_BYTES) {
-    throw new ValidationError('File is larger than the 5 MB limit');
+    throw new ValidationError('File is larger than the 4 MB limit');
   }
   const lower = filename.toLowerCase();
   if (lower.endsWith('.csv')) {
