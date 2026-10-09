@@ -318,3 +318,149 @@ gunzip -c backup_2025-01-15.sql.gz | psql -h localhost -U seating exam_seating_t
 2. Create exam → generate → publish
 3. Login as student (demo account) → verify seat in portal
 4. Export PDF/CSV/XLSX → verify download
+---
+
+# Option B: Deploying to Vercel (single project, same-origin)
+
+The Docker/nginx setup above is one option. This section covers Vercel, where the
+React SPA and the Express API are served from **one** project on **one** domain,
+so the SPA calls `/api/v1/*` on its own origin. Same-origin means the refresh
+cookie keeps `SameSite=Lax` and no CORS configuration is required.
+
+## How it is wired
+
+| Path | Handled by |
+|------|-------------|
+| `/api/*` | rewritten to `api/index.ts` → Express (`backend/dist/app.js`) |
+| `/assets/*`, `/index.html` | Vercel static hosting of `frontend/dist` |
+| everything else | rewritten to `/index.html` (SPA deep links) |
+
+Key files (all committed):
+- `vercel.json` — rewrites + function duration
+- `api/index.ts` — Express entry for the Vercel Function
+- `package.json` (root) — build orchestration for both apps
+- `backend/package.json` — `build` now runs `prisma generate` first
+
+`api/index.ts` is a two-line re-export: `export default createApp()`.
+
+### Why the API rewrite uses `(.*)` and not `:path*`
+
+This is load-bearing. Vercel rewrites are URL-masking, so the Function normally
+receives the **original** path in `req.url` and Express routes normally.
+
+However, Vercel's routing compiler appends the captured path as a query
+parameter when the source uses a *named* parameter. Compiling both forms through
+`@vercel/routing-utils`:
+
+| `source` | compiled `dest` | `req.url` seen by the Function |
+|----------|-----------------|--------------------------------|
+| `/api/:path*` | `/api/index?path=$1` | destination + query — **all routes 404** |
+| `/api/(.*)` | `/api/index` | original path — works |
+
+A `dest` carrying query captures is the documented exception to URL-masking, so
+`:path*` breaks routing. The regex capture group `(.*)` avoids it. If this is
+ever changed back to `:path*`, every API call will 404.
+
+To re-check after editing `vercel.json`:
+
+```js
+const { getTransformedRoutes } = require('@vercel/routing-utils');
+const { rewrites } = require('./vercel.json');
+console.log(getTransformedRoutes({ routes: [], rewrites }).routes);
+// No `dest` should contain `?path=`
+```
+
+## Platform limits that shaped this setup
+
+| Limit | Value | Impact here |
+|-------|-------|-------------|
+| Request/response body | **4.5 MB** | CSV import cap lowered 5 MB → 4 MB |
+| Function bundle | 250 MB | fine |
+| Max duration | 300 s (Hobby) | `maxDuration: 60` set in `vercel.json` |
+| Memory | 2 GB / 1 vCPU | fine |
+
+The 4.5 MB body cap is enforced by Vercel *before* Express runs, so a 5 MB
+upload would fail with an opaque 413. The app now rejects anything over 4 MB
+itself with a clear validation error.
+
+## Deploy steps
+
+### 1. Provision Postgres
+
+Create a managed Postgres 16 database (Vercel Postgres, Neon, Supabase,
+Railway). Copy the pooled connection string.
+
+### 2. Run migrations once, before the first deploy
+
+```bash
+cd backend
+DATABASE_URL="postgresql://USER:PASS@HOST:5432/exam_seating?schema=public" \
+  npx prisma migrate deploy
+
+# optional first super admin
+DATABASE_URL="..." SUPER_ADMIN_EMAIL="admin@your.edu" \
+  SUPER_ADMIN_PASSWORD="<strong-password>" npm run seed
+```
+
+Migrations are **not** part of the build. Re-run this after any schema change.
+
+### 3. Push and import
+
+```bash
+git add -A && git commit -m "Add Vercel deployment config"
+git push
+```
+
+In Vercel: **Add New → Project → import the repo**. Leave the detected settings
+alone (`vercel.json` supplies the build command and output directory).
+
+### 4. Set environment variables
+
+Add these under **Project → Settings → Environment Variables**, applied to
+Production *and* Preview:
+
+| Variable | Value |
+|----------|-------|
+| `DATABASE_URL` | your pooled Postgres URL |
+| `JWT_SECRET` | `openssl rand -hex 64` |
+| `JWT_REFRESH_SECRET` | `openssl rand -hex 64` (different from above) |
+| `CORS_ORIGIN` | your production domain, e.g. `https://seating.example.com` |
+| `SEATING_TIME_BUDGET_MS` | `10000` |
+
+Do **not** set `VITE_API_URL` — the SPA uses relative URLs, which is what makes
+this same-origin.
+
+### 5. Deploy and verify
+
+```bash
+curl -f https://your-domain/api/v1/health
+# {"status":"ok","db":"up",...}
+
+curl -i https://your-domain/api/v1/health | grep -i 'set-cookie'
+```
+
+Smoke test: login → create exam → generate seating → publish → export.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Every API call 404s | rewrite source uses `:path*`, which injects `?path=` and replaces `req.url` | use the regex group `(.*)` as in `vercel.json` (see above) |
+| "PrismaClient did not initialize" | client not generated | `backend/package.json` `build` must run `prisma generate` first |
+| 413 on CSV upload | body over 4.5 MB | keep files under 4 MB |
+| Stuck logged out | refresh cookie rejected | `CORS_ORIGIN` must match the exact deployed origin |
+| Build fails on `pg_trgm`/extension | DB extension missing | enable it on the managed Postgres, then re-run migrations |
+
+## Known serverless caveats
+
+- **Cold starts.** First request after idle pays ~1-3 s (Prisma client + Express
+  init). Fluid compute reduces this.
+- **Rate limiting is per-instance.** `express-rate-limit` uses in-memory state,
+  so the effective limit multiplies by the number of concurrent instances. For a
+  college deployment this is acceptable; for anything stricter, move to a
+  Redis-backed store.
+- **DB connections.** Each warm instance holds its own pool (max 10). With many
+  concurrent instances, use a pooled connection string (PgBouncer / Neon pooled)
+  to stay under the Postgres connection limit.
+- **Seating generation** runs in a `worker_threads` Worker; `maxDuration: 60`
+  covers the 10 s engine budget plus DB writes.
