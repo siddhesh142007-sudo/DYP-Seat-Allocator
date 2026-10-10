@@ -15,9 +15,12 @@ export default defineConfig({
     hookTimeout: 120000,
     pool: 'forks',
     globalSetup: ['tests/globalSetup.ts'],
-    // Every DB suite truncates the SAME test database in beforeAll, so files
-    // must be fully serialized or one file's TRUNCATE wipes another file's
-    // fixtures mid-test (symptom: sporadic FK violations and 404s).
+    // Clones a per-file database from the template and points DATABASE_URL at
+    // it before the test module (and Prisma) is imported.
+    setupFiles: ['tests/setup.ts'],
+    // Each file gets its own database (tests/setup.ts), so files could run in
+    // parallel. They still run one at a time because cloning from the template
+    // takes an exclusive lock on it; raise this once that changes.
     fileParallelism: false,
     maxWorkers: 1,
     minWorkers: 1,

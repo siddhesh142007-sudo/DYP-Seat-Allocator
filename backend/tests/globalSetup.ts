@@ -1,46 +1,80 @@
-import 'dotenv/config';
 import { execSync } from 'node:child_process';
 import pg from 'pg';
+import { adminUrl, assertSafeDbName, BASE_DB, TEMPLATE_DB, urlForDb } from './helpers/dbConfig.js';
 
-const TEST_DATABASE_URL =
-  process.env.TEST_DATABASE_URL ??
-  'postgresql://seating:seating_dev_password@localhost:5432/exam_seating_test?schema=public';
+async function connectAdmin(): Promise<pg.Client> {
+  const client = new pg.Client({ connectionString: adminUrl(), connectionTimeoutMillis: 10000 });
+  await client.connect();
+  return client;
+}
 
 /**
  * One-time setup for the DB test suite:
- * 1. creates the test database if it does not exist,
- * 2. applies every committed migration with `prisma migrate deploy`
- *    (proves deploy works from scratch, exactly as the acceptance requires).
+ *   1. drop databases left behind by a previous, interrupted run;
+ *   2. create the template database;
+ *   3. apply every committed migration to it with `prisma migrate deploy`
+ *      (which also proves deploy works from scratch).
+ *
+ * Each test file then clones the template — see tests/setup.ts — so no two files
+ * share state and a failure in one can never corrupt another.
  */
-export default async function globalSetup(): Promise<void> {
-  // Point every forked worker at the test database (dotenv never overrides
-  // an existing value, so this also beats backend/.env in child processes).
-  process.env.DATABASE_URL = TEST_DATABASE_URL;
+export default async function globalSetup(): Promise<() => Promise<void>> {
+  assertSafeDbName(BASE_DB);
+  assertSafeDbName(TEMPLATE_DB);
 
-  const url = new URL(TEST_DATABASE_URL);
-  const dbName = url.pathname.replace(/^\//, '');
-  if (!/^[a-z_][a-z0-9_]*$/.test(dbName)) {
-    throw new Error(`Unsafe test database name in TEST_DATABASE_URL: ${dbName}`);
-  }
-
-  const adminUrl = new URL(TEST_DATABASE_URL);
-  adminUrl.pathname = '/postgres';
-
-  const admin = new pg.Client({ connectionString: adminUrl.toString(), connectionTimeoutMillis: 10000 });
-  await admin.connect();
+  const admin = await connectAdmin();
   try {
-    const res = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
-    if (res.rowCount === 0) {
-      await admin.query(`CREATE DATABASE "${dbName}"`);
-      // eslint-disable-next-line no-console
-      console.log(`[globalSetup] created test database "${dbName}"`);
+    // Leftovers from a killed run hold nothing we need, and letting them pile up
+    // would eventually exhaust connection or namespace limits.
+    const strays = await admin.query(
+      'SELECT datname FROM pg_database WHERE datname LIKE $1 OR datname = $2',
+      [`${BASE_DB}_p%`, TEMPLATE_DB],
+    );
+    for (const row of strays.rows) {
+      const name = row.datname as string;
+      assertSafeDbName(name);
+      await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
     }
+    if (strays.rowCount) {
+      // eslint-disable-next-line no-console
+      console.log(`[globalSetup] dropped ${strays.rowCount} leftover test database(s)`);
+    }
+
+    // Prisma applies migrations but never creates the database itself, so the
+    // template must exist before `migrate deploy` can target it.
+    await admin.query(`CREATE DATABASE "${TEMPLATE_DB}"`);
   } finally {
     await admin.end();
   }
 
   execSync('npx prisma migrate deploy', {
     stdio: 'inherit',
-    env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
+    env: { ...process.env, DATABASE_URL: urlForDb(TEMPLATE_DB) },
   });
+
+  // Vitest calls a default export's return value after the run. Named
+  // `teardown` exports are only honoured alongside a named `setup` export, so
+  // returning the cleaner is what actually registers it.
+  return teardown;
+}
+
+/** Drop every per-worker database so a run leaves Postgres as it found it. */
+export async function teardown(): Promise<void> {
+  const admin = await connectAdmin();
+  try {
+    const strays = await admin.query('SELECT datname FROM pg_database WHERE datname LIKE $1', [
+      `${BASE_DB}_p%`,
+    ]);
+    for (const row of strays.rows) {
+      const name = row.datname as string;
+      assertSafeDbName(name);
+      await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+    }
+    if (strays.rowCount) {
+      // eslint-disable-next-line no-console
+      console.log(`[globalSetup] dropped ${strays.rowCount} test database(s)`);
+    }
+  } finally {
+    await admin.end();
+  }
 }

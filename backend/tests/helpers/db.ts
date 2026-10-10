@@ -1,14 +1,22 @@
 import 'dotenv/config';
 import pg from 'pg';
 
-export const TEST_DATABASE_URL =
-  process.env.TEST_DATABASE_URL ??
-  'postgresql://seating:seating_dev_password@localhost:5432/exam_seating_test?schema=public';
+/**
+ * The database for the CURRENT test file.
+ *
+ * tests/setup.ts (a Vitest setupFile) has already cloned this worker's own
+ * database from the template and pointed DATABASE_URL at it. Reading the env
+ * rather than recomputing keeps every DB-touching module — Prisma included —
+ * on the same isolated database.
+ *
+ * Never fall back to a shared name here: that is what made the suite
+ * nondeterministic.
+ */
+export const TEST_DATABASE_URL = process.env.DATABASE_URL as string;
 
-// Force every DB-touching module loaded afterwards (including Prisma) onto
-// the test database — never the dev one. dotenv does not override existing
-// values, so this also beats backend/.env.
-process.env.DATABASE_URL = TEST_DATABASE_URL;
+if (!TEST_DATABASE_URL) {
+  throw new Error('DATABASE_URL is unset — tests/setup.ts must run before any test module');
+}
 
 export function createTestPool(max = 5): pg.Pool {
   return new pg.Pool({ connectionString: TEST_DATABASE_URL, max });
