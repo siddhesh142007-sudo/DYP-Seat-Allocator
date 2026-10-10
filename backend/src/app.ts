@@ -5,6 +5,8 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { env } from './config/env.js';
 import { httpLogger, notFoundHandler, errorHandler } from './common/middleware/errorHandler.js';
+import { createRateLimitStore } from './common/rateLimitStore.js';
+import { ensureDatabaseReady } from './db/warmup.js';
 import { healthRouter } from './modules/health/health.router.js';
 import { authRouter } from './modules/auth/auth.router.js';
 import { usersRouter } from './modules/users/users.router.js';
@@ -60,7 +62,26 @@ export function createApp(): Express {
   app.use(cookieParser());
   app.use(httpLogger);
 
+  // The database may have scaled to zero while this instance was idle, so pay
+  // the resume cost here, once, instead of letting the first query fail.
+  app.use(
+    '/api',
+    async (req, res, next) => {
+      const readiness = await ensureDatabaseReady();
+      if (!readiness.ready && req.path !== '/health') {
+        res.status(503).json({
+          error: { code: 'SERVICE_UNAVAILABLE', message: 'Database is not reachable', details: null },
+        });
+        return;
+      }
+      next();
+    },
+  );
+
   if (env.NODE_ENV !== 'test') {
+    // Shared Postgres counters: the default in-memory store would give every
+    // warm Vercel instance its own budget, so the effective limit would grow
+    // with traffic instead of holding steady.
     app.use(
       '/api',
       rateLimit({
@@ -68,6 +89,7 @@ export function createApp(): Express {
         max: env.RATE_LIMIT_MAX,
         standardHeaders: true,
         legacyHeaders: false,
+        store: createRateLimitStore(),
         message: { error: { code: 'RATE_LIMITED', message: 'Too many requests', details: null } },
       }),
     );

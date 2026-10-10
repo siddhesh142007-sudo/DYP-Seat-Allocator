@@ -10,7 +10,12 @@ export function getPool(): pg.Pool {
       connectionString: env.DATABASE_URL,
       max: 10,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 3000,
+      // Generous on purpose. This pool serves the health check and the shared
+      // rate-limit counters, so a timeout here is what makes the whole API look
+      // down. Against a pooled, scale-to-zero host (Neon) even a warm connection
+      // can take ~3 s because PgBouncer has to wake and complete the TLS
+      // handshake; 3 s was measurably not enough and failed intermittently.
+      connectionTimeoutMillis: env.DB_CONNECT_TIMEOUT_MS,
     });
     pool.on('error', (err) => {
       // Prevent an idle-client error from crashing the process.

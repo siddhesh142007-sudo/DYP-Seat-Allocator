@@ -2,6 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { env } from '../../config/env.js';
 import { asyncHandler } from '../../common/asyncHandler.js';
+import { createRateLimitStore } from '../../common/rateLimitStore.js';
 import { loginSchema, changePasswordSchema } from './auth.schemas.js';
 import { authenticate } from './auth.middleware.js';
 import * as authService from './auth.service.js';
@@ -29,6 +30,10 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
+  // Shared counters: with the in-memory store each warm Vercel instance would
+  // allow its own set of attempts, and the brute-force limit would weaken as
+  // traffic (and therefore instance count) grew.
+  store: createRateLimitStore(),
   keyGenerator: (req) => String((req.body as { identifier?: string } | undefined)?.identifier ?? '').toLowerCase(),
   message: { error: { code: 'RATE_LIMITED', message: 'Too many failed login attempts. Try again in a minute.', details: null } },
 });

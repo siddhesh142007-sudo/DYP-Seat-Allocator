@@ -37,6 +37,10 @@ const envSchema = z
     // Prisma's default interactive-transaction timeout is 5 s, which a remote
     // database can exceed (cold start, slow query), aborting with P2028.
     DB_TRANSACTION_TIMEOUT_MS: z.coerce.number().int().min(1000).default(20000),
+    // Connection timeout for the direct pg pool (health checks, rate limiting).
+    // A pooled scale-to-zero host needs a few seconds just to accept a
+    // connection, so this is deliberately much larger than a typical 3 s.
+    DB_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(1000).default(15000),
 
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
