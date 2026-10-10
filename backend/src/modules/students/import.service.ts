@@ -4,6 +4,7 @@ import { prisma } from '../../db/prisma.js';
 import { ConflictError, UnprocessableError, ValidationError } from '../../common/errors.js';
 import { auditLog } from '../audit/audit.service.js';
 import { parseRoll } from '../dypit/roll.js';
+import { withTransaction } from '../../db/tx.js';
 
 export const IMPORT_HEADERS = [
   'roll_number',
@@ -307,7 +308,7 @@ export async function importStudents(
   let skipped = 0;
 
   try {
-    await prisma.$transaction(
+    await withTransaction(
       async (tx) => {
         // One bulk insert for new rows; per-row updates only where data changed.
         const toCreate = prepared.filter((p) => p.existingId === null);

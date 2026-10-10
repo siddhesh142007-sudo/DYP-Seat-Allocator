@@ -4,6 +4,7 @@ import { ConflictError, NotFoundError } from '../../common/errors.js';
 import { auditLog } from '../audit/audit.service.js';
 import { parseRoll } from '../dypit/roll.js';
 import type { CreateStudentInput, ListStudentsQuery, UpdateStudentInput } from './students.schemas.js';
+import { withTransaction } from '../../db/tx.js';
 
 const STUDENT_INCLUDE = {
   academicYear: { select: { id: true, name: true, code: true } },
@@ -58,7 +59,7 @@ export async function createStudent(input: CreateStudentInput, actorId: string, 
   if (duplicate) throw new ConflictError('A student with this roll number already exists');
 
   try {
-    const student = await prisma.$transaction(async (tx) => {
+    const student = await withTransaction(async (tx) => {
       const created = await tx.student.create({
         data: {
           rollNumber: input.rollNumber,
@@ -103,7 +104,7 @@ export async function updateStudent(id: string, patch: UpdateStudentInput, actor
   }
 
   try {
-    const student = await prisma.$transaction(async (tx) => {
+    const student = await withTransaction(async (tx) => {
       await tx.student.update({
         where: { id },
         data: {
@@ -143,7 +144,7 @@ export async function deactivateStudent(id: string, actorId: string, ip: string 
   const existing = await prisma.student.findUnique({ where: { id }, include: { user: true } });
   if (!existing) throw new NotFoundError('Student not found');
 
-  await prisma.$transaction(async (tx) => {
+  await withTransaction(async (tx) => {
     await tx.student.update({ where: { id }, data: { status: 'INACTIVE' } });
     if (existing.user) {
       await tx.user.update({ where: { id: existing.user.id }, data: { status: 'INACTIVE' } });

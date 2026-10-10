@@ -25,6 +25,7 @@ import type {
   Room,
   Student,
 } from '../../engine/types.js';
+import { withTransaction } from '../../db/tx.js';
 
 type Tx = Prisma.TransactionClient;
 
@@ -180,7 +181,7 @@ export async function generateSeatingForExam(
     | { kind: 'success'; runId: string; stats: unknown; penalty: number; timing: unknown; report: unknown };
 
   try {
-    outcome = await prisma.$transaction(async (tx) => {
+    outcome = await withTransaction(async (tx) => {
       const lockRows = (await tx.$queryRaw`
         SELECT pg_try_advisory_xact_lock(hashtext(${examId})::bigint) AS locked
       `) as Array<{ locked: boolean }>;
@@ -399,7 +400,7 @@ export async function generateSeatingForExam(
 async function unpublishInternal(examId: string, userId: string, reason: string, ip: string | null) {
   const run = await prisma.seatingRun.findFirst({ where: { examId, status: 'PUBLISHED' } });
   if (!run) throw new NotFoundError('No published seating run found for this exam.');
-  await prisma.$transaction(async (tx) => {
+  await withTransaction(async (tx) => {
     await tx.$executeRaw`SELECT allow_published_mutation()`;
     await tx.seatingAllocation.updateMany({ where: { runId: run.id }, data: { publishedAt: null } });
     await tx.seatingRun.update({
@@ -684,7 +685,7 @@ export async function publishSeating(examId: string, userId: string, ip: string 
   }
 
   const now = new Date();
-  await prisma.$transaction(async (tx) => {
+  await withTransaction(async (tx) => {
     await tx.seatingAllocation.updateMany({ where: { runId: run.id }, data: { publishedAt: now } });
     await tx.seatingRun.update({
       where: { id: run.id },

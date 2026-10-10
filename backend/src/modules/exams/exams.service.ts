@@ -11,6 +11,7 @@ import {
   type RegistrationStatusInput,
   type UpdateExamInput,
 } from './exams.schemas.js';
+import { withTransaction } from '../../db/tx.js';
 
 const PLAN_RUN_STATUSES = ['DRAFT', 'VALIDATED', 'PUBLISHED'] as const;
 
@@ -175,7 +176,7 @@ export async function createExam(input: CreateExamInput, actorId: string, ip: st
   const year = await prisma.academicYear.findUnique({ where: { id: input.academicYearId } });
   if (!year) throw new NotFoundError('Academic year not found');
 
-  const exam = await prisma.$transaction(async (tx) => {
+  const exam = await withTransaction(async (tx) => {
     const created = await tx.exam.create({
       data: {
         subject: input.subject,
@@ -249,7 +250,7 @@ export async function updateExam(id: string, patch: UpdateExamInput, actorId: st
     (patch.endTime !== undefined && patch.endTime !== formatTime(exam.endTime)) ||
     yearChanging;
 
-  const updated = await prisma.$transaction(async (tx) => {
+  const updated = await withTransaction(async (tx) => {
     await tx.exam.update({
       where: { id },
       data: {
@@ -408,7 +409,7 @@ export async function setRegistrationStatus(
   let isStale = exam.isStale;
   if (reg.status !== status) {
     const planExists = await hasPlan(examId);
-    isStale = await prisma.$transaction(async (tx) => {
+    isStale = await withTransaction(async (tx) => {
       await tx.examRegistration.update({ where: { id: reg.id }, data: { status } });
       if (planExists) {
         await tx.exam.update({ where: { id: examId }, data: { isStale: true } });
@@ -456,7 +457,7 @@ export async function addRegistration(
     throw new ConflictError('Student is already registered for this exam');
   }
 
-  const reg = await prisma.$transaction(async (tx) => {
+  const reg = await withTransaction(async (tx) => {
     const created = existing
       ? await tx.examRegistration.update({ where: { id: existing.id }, data: { status: 'REGISTERED' } })
       : await tx.examRegistration.create({ data: { examId, studentId, status: 'REGISTERED' } });

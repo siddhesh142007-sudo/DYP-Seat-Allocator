@@ -9,6 +9,7 @@ import { validate } from '../../engine/validate.js';
 import type { Assignment, EngineInput, EngineResult, HistoryExam, Room, Student } from '../../engine/types.js';
 import { studentsInRange } from './intents.service.js';
 import type { RollRange } from './roll.js';
+import { withTransaction } from '../../db/tx.js';
 
 /** Penalty weights, mirroring the exam-wide generator's defaults. */
 const DEFAULT_WEIGHTS = {
@@ -297,7 +298,7 @@ export async function generateFromIntents(
   const totalPenalty = blocks.reduce((sum, b) => sum + b.penalty, 0);
 
   // Save atomically: supersede the old plan, insert the new run + allocations.
-  const saved = await prisma.$transaction(async (tx) => {
+  const saved = await withTransaction(async (tx) => {
     const previous = await tx.seatingRun.findMany({
       where: { examId, status: { in: [...ACTIVE_RUN_STATUSES] } },
       select: { id: true },

@@ -31,6 +31,10 @@ const envSchema = z
     SEATING_TIME_BUDGET_MS: z.coerce.number().int().positive().default(10000),
     SEATING_DEFAULT_HISTORY_DEPTH: z.coerce.number().int().min(0).default(3),
 
+    // Prisma's default interactive-transaction timeout is 5 s, which a remote
+    // database can exceed (cold start, slow query), aborting with P2028.
+    DB_TRANSACTION_TIMEOUT_MS: z.coerce.number().int().min(1000).default(20000),
+
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
     AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),

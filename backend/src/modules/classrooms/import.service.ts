@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs';
 import { prisma } from '../../db/prisma.js';
 import { UnprocessableError, ValidationError } from '../../common/errors.js';
 import { auditLog } from '../audit/audit.service.js';
+import { withTransaction } from '../../db/tx.js';
 
 export const IMPORT_HEADERS = ['room_number', 'building', 'floor', 'bench_count'] as const;
 
@@ -244,7 +245,7 @@ export async function importClassrooms(
         colNo: 1,
       })),
     );
-    await prisma.$transaction(
+    await withTransaction(
       async (tx) => {
         await tx.classroom.createMany({
           data: rooms.map(({ id, room }) => ({
