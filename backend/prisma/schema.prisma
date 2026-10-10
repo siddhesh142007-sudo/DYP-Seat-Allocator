@@ -5,7 +5,8 @@
 // Naming: DB is snake_case via @map/@@map; enums map to snake_case types.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "darwin", "darwin-arm64"]
 }
 
 datasource db {

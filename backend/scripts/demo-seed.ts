@@ -239,17 +239,6 @@ async function main() {
 
   console.log(`✓ Total ${studentIds.length} students created`);
 
-  // --- Student logins (create demo accounts for first 20 students only; all students can use roll@student.demo / Demo123!) ---
-  const demoStudentIds = studentIds.slice(0, 20);
-  const studentUsers: Array<Promise<any>> = [];
-  for (const studentId of demoStudentIds) {
-    studentUsers.push(
-      createUser(`${studentId}@demo.local`, 'STUDENT', studentId),
-    );
-  }
-  await Promise.all(studentUsers);
-  console.log(`✓ ${demoStudentIds.length} demo student user accounts created (all students can login via roll@student.demo / Demo123!)`);
-
   // --- Exams ---
   // 2nd Year exams (AY 2024-25)
   const dsExam = await prisma.exam.create({
@@ -311,8 +300,7 @@ async function main() {
   console.log('\n=== DEMO CREDENTIALS (DEV ONLY) ===');
   console.log('Super Admin:    admin@demo.local / Demo123!');
   console.log('Exam Admin:     examadmin@demo.local / Demo123!');
-  console.log('Students:       <rollnumber>@student.demo / Demo123!');
-  console.log('                (e.g. 24cse001@student.demo / Demo123!)');
+  console.log('Student logins: disabled (administrator-only deployment)');
   console.log('====================================\n');
 }
 
