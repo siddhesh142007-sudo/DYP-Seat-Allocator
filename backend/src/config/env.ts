@@ -23,7 +23,10 @@ const envSchema = z
     ACCESS_TOKEN_TTL: z.coerce.number().int().positive().default(900),
     REFRESH_TOKEN_TTL: z.coerce.number().int().positive().default(604800),
     REFRESH_COOKIE_NAME: z.string().min(1).default('rt'),
-    PASSWORD_HASH_COST: z.coerce.number().int().min(12).default(12),
+    // bcryptjs is a pure-JS implementation, so cost 12 costs seconds per hash
+    // on typical hardware. The floor is 4 so the test suite can run quickly;
+    // production still requires >= 12 (enforced in superRefine below).
+    PASSWORD_HASH_COST: z.coerce.number().int().min(4).default(12),
 
     CORS_ORIGIN: z.string().min(1).default('http://localhost:5173'),
     VITE_API_URL: z.string().optional(),
@@ -57,6 +60,13 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ['JWT_REFRESH_SECRET'],
         message: 'JWT_REFRESH_SECRET is required in production (min 32 chars)',
+      });
+    }
+    if (env.PASSWORD_HASH_COST < 12) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PASSWORD_HASH_COST'],
+        message: 'PASSWORD_HASH_COST must be 12 or higher in production',
       });
     }
   });

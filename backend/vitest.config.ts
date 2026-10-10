@@ -15,11 +15,18 @@ export default defineConfig({
     hookTimeout: 120000,
     pool: 'forks',
     globalSetup: ['tests/globalSetup.ts'],
-    // The DB test suites truncate shared tables — files must not run in
-    // parallel against the same test database.
+    // Every DB suite truncates the SAME test database in beforeAll, so files
+    // must be fully serialized or one file's TRUNCATE wipes another file's
+    // fixtures mid-test (symptom: sporadic FK violations and 404s).
     fileParallelism: false,
+    maxWorkers: 1,
+    minWorkers: 1,
     env: {
       DATABASE_URL: TEST_DATABASE_URL,
+      // bcryptjs is pure JS; cost 12 takes ~1.5-3s per hash on typical
+      // hardware, which pushed the auth suites past the per-test timeout.
+      // Production still requires >= 12 (see src/config/env.ts).
+      PASSWORD_HASH_COST: '4',
     },
   },
 });
