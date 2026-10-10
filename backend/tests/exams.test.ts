@@ -207,12 +207,21 @@ describe('exams CRUD', () => {
     expect(bad.status).toBe(400);
   });
 
-  it('blocks edits while the seating plan is PUBLISHED', async () => {
+  it('blocks schedule edits while the seating plan is PUBLISHED', async () => {
     const exam = await mkExam();
     await pool.query(`UPDATE exams SET seating_status = 'PUBLISHED' WHERE id = $1`, [exam.id]);
-    const res = await request(app).put(`/api/v1/exams/${exam.id}`).set(auth(superToken)).send({ subject: 'Nope' });
-    expect(res.status).toBe(409);
-    expect(res.body.error.message).toMatch(/published/i);
+    const metadataUpdate = await request(app)
+      .put(`/api/v1/exams/${exam.id}`)
+      .set(auth(superToken))
+      .send({ subject: 'Renamed while published' });
+    expect(metadataUpdate.status).toBe(200);
+
+    const scheduleUpdate = await request(app)
+      .put(`/api/v1/exams/${exam.id}`)
+      .set(auth(superToken))
+      .send({ startTime: '10:00' });
+    expect(scheduleUpdate.status).toBe(409);
+    expect(scheduleUpdate.body.error.message).toMatch(/published/i);
     await pool.query(`UPDATE exams SET seating_status = 'NOT_GENERATED' WHERE id = $1`, [exam.id]);
   });
 
