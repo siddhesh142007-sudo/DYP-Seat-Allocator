@@ -227,9 +227,17 @@ export async function updateExam(id: string, patch: UpdateExamInput, actorId: st
   const exam = await loadExam(id);
 
   if (exam.seatingStatus === 'PUBLISHED') {
-    throw new ConflictError(
-      "This exam's seating plan is published and locked. Unpublish the seating plan before editing the exam.",
-    );
+    const scheduleChanging =
+      (patch.examDate !== undefined && patch.examDate !== formatDate(exam.examDate)) ||
+      (patch.startTime !== undefined && patch.startTime !== formatTime(exam.startTime)) ||
+      (patch.endTime !== undefined && patch.endTime !== formatTime(exam.endTime)) ||
+      patch.academicYearId !== undefined;
+
+    if (scheduleChanging) {
+      throw new ConflictError(
+        'The exam schedule cannot be modified while a seating plan is published. Unpublish the plan first (SUPER_ADMIN only), then edit examDate/startTime/endTime/academicYear and regenerate/re-publish.'
+      );
+    }
   }
 
   const effStartTime = patch.startTime ? patch.startTime : formatTime(exam.startTime);
